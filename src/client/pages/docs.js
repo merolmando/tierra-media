@@ -156,6 +156,7 @@ function highlightActive() {
 }
 
 function loadDoc(path) {
+  if (!path) return
   const container = document.getElementById('docs-content')
   if (!container) return
   container.innerHTML = '<p style="color:#666">Cargando...</p>'
