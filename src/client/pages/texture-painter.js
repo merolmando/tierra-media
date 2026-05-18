@@ -65,10 +65,9 @@ function setupDisplay() {
   const container = document.getElementById('tp-canvas-container')
   container.innerHTML = ''
   displayCanvas = document.createElement('canvas')
-  displayCanvas.style.maxWidth = '100%'
-  displayCanvas.style.maxHeight = '100%'
   displayCanvas.style.cursor = 'crosshair'
   displayCanvas.style.imageRendering = 'pixelated'
+  displayCanvas.style.display = 'block'
   container.appendChild(displayCanvas)
   displayCtx = displayCanvas.getContext('2d')
 
@@ -76,6 +75,38 @@ function setupDisplay() {
   displayCanvas.addEventListener('mousemove', onMouseMove)
   displayCanvas.addEventListener('mouseup', onMouseUp)
   displayCanvas.addEventListener('mouseleave', onMouseUp)
+
+  const ro = new ResizeObserver(() => resizeDisplay())
+  ro.observe(container)
+  displayCanvas._resizeObserver = ro
+}
+
+function resizeDisplay() {
+  if (!displayCanvas || !diffuseCanvas) return
+  const container = document.getElementById('tp-canvas-container')
+  if (!container) return
+  const cw = container.clientWidth
+  const ch = container.clientHeight
+  if (cw === 0 || ch === 0) return
+
+  const src = activeLayer === 'normal'
+    ? heightToNormal(heightCanvas, heightStrength)
+    : (activeLayer === 'height' ? heightCanvas : diffuseCanvas)
+  const aspect = src.width / src.height
+
+  let dw, dh
+  if (cw / ch > aspect) {
+    dh = ch
+    dw = ch * aspect
+  } else {
+    dw = cw
+    dh = cw / aspect
+  }
+
+  dw = Math.floor(dw)
+  dh = Math.floor(dh)
+  displayCanvas.style.width = dw + 'px'
+  displayCanvas.style.height = dh + 'px'
 }
 
 function renderToDisplay() {
@@ -91,6 +122,7 @@ function renderToDisplay() {
   displayCanvas.width = src.width
   displayCanvas.height = src.height
   displayCtx.drawImage(src, 0, 0)
+  resizeDisplay()
 }
 
 function fillCanvas(c, color) {
@@ -509,6 +541,9 @@ function escapeHtml(str) {
 }
 
 export function cleanupTexturePainter() {
+  if (displayCanvas && displayCanvas._resizeObserver) {
+    displayCanvas._resizeObserver.disconnect()
+  }
   diffuseCanvas = null
   heightCanvas = null
   displayCanvas = null
