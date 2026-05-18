@@ -126,6 +126,7 @@ export function initPreview(container) {
         img.onload = () => {
           const tex = new THREE.Texture(img)
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+          tex.colorSpace = THREE.LinearSRGBColorSpace
           mat.normalMap = tex
           if (influence != null) mat.normalScale = new THREE.Vector2(influence, influence)
           mat.needsUpdate = true
@@ -171,12 +172,12 @@ export function initPreview(container) {
         mat.transparent = props.opacity < 1
       }
 
-      if (props.textureId != null) {
+      if (props.textureId != null && props.textureId !== loadedTexId) {
         mat.map = null
         loadedTexId = null
         if (props.textureId) setTexture(props.textureId, props.textureInfluence)
       }
-      if (props.normalMapId != null) {
+      if (props.normalMapId != null && props.normalMapId !== loadedNormalId) {
         mat.normalMap = null
         loadedNormalId = null
         if (props.normalMapId) setNormalMap(props.normalMapId, props.normalMapInfluence)
