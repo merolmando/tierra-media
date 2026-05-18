@@ -28,60 +28,136 @@ function mdToHtml(md) {
     .replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>')
     .replace(/\n\n/g, '</p><p>')
     .replace(/\n/g, '<br>')
-
   html = html.replace(/<br>\s*<br>/g, '</p><p>')
   return '<p>' + html + '</p>'
 }
 
-const docsTree = [
-  { name: 'engine', label: 'Motor gráfico', children: [
-    { path: 'engine/rendering', label: 'Renderizado' },
-    { path: 'engine/camera', label: 'Cámara' },
-    { path: 'engine/raycaster', label: 'Selección' },
-    { path: 'engine/grid', label: 'Grid y ejes' },
-  ]},
-  { name: 'system', label: 'Sistemas', children: [
-    { path: 'system/web', label: 'Frontend web' },
-    { path: 'system/server', label: 'Servidor' },
-  ]},
-]
+const labels = {
+  engine: 'Motor gráfico',
+  rendering: 'Renderizado',
+  chunks: 'Chunks',
+  camera: 'Cámara',
+  collision: 'Colisión',
+  'world-gen': 'Generación procedural',
+  mecanics: 'Mecánicas',
+  combat: 'Combate',
+  crafting: 'Crafting',
+  construction: 'Construcción',
+  inventory: 'Inventario',
+  system: 'Sistemas',
+  character: 'Personaje',
+  world: 'Mundo',
+  multiplayer: 'Multiplayer',
+  economy: 'Economía',
+  npcs: 'NPCs',
+  events: 'Eventos y misiones',
+  controls: 'Controles',
+  tools: 'Herramientas',
+  'material-creator': 'Material Creator',
+  'texture-painter': 'Texture Painter',
+  'voxel-modeler': 'Voxel Modeler',
+  studio: 'Studio',
+  'animation-rigging': 'Animation / Rigging',
+  'npc-editor': 'Editor de NPCs',
+  'procedural-map-editor': 'Editor de Mapas Proc.',
+  'hud-ui-editor': 'Editor de HUD/UI',
+  'item-recipe-editor': 'Editor de Items/Recetas',
+  'tile-creator': 'Creador de Tiles',
+  'texture-cutter': 'Cortador de Texturas',
+  'light-baker': 'Baker de Luz',
+  'entity-manager': 'Gestor de Entidades',
+  'atlas-viewer': 'Visor de Atlas',
+  web: 'Frontend web',
+  server: 'Servidor',
+}
+
+function getLabel(name) {
+  return labels[name] || name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, ' ')
+}
+
+let currentPath = null
+let treeData = []
 
 export function renderDocs(path) {
+  currentPath = path || null
   const app = document.getElementById('app')
-
-  const treeHtml = docsTree.map(group => `
-    <details open>
-      <summary>${group.label}</summary>
-      ${group.children.map(c => `
-        <a href="#" data-doc="${c.path}">${c.label}</a>
-      `).join('')}
-    </details>
-  `).join('')
 
   app.innerHTML = `
     <h1>Documentación</h1>
-    <div style="display:grid;grid-template-columns:240px 1fr;gap:24px">
-      <div class="docs-tree">${treeHtml}</div>
+    <div id="docs-layout" style="display:grid;grid-template-columns:240px 1fr;gap:24px">
+      <div class="docs-tree" id="docs-tree"><p style="color:#666">Cargando...</p></div>
       <div class="docs-content" id="docs-content">
         <p style="color:#666">Seleccioná un tema del árbol para ver su documentación.</p>
       </div>
     </div>
   `
 
-  app.querySelectorAll('[data-doc]').forEach(a => {
+  fetch('/api/docs/tree')
+    .then(r => r.json())
+    .then(tree => {
+      treeData = tree
+      renderTree()
+      if (currentPath) loadDoc(currentPath)
+    })
+    .catch(() => {
+      document.getElementById('docs-tree').innerHTML = '<p style="color:#666">Error al cargar</p>'
+    })
+}
+
+function renderTree() {
+  const container = document.getElementById('docs-tree')
+  container.innerHTML = renderNodes(treeData, 0)
+  container.querySelectorAll('[data-doc-link]').forEach(a => {
     a.addEventListener('click', e => {
       e.preventDefault()
-      const docPath = a.dataset.doc
-      history.replaceState(null, '', `#/docs/${docPath}`)
-      loadDoc(docPath)
+      const path = a.dataset.docLink
+      currentPath = path
+      history.replaceState(null, '', `#/docs/${path}`)
+      loadDoc(path)
+      highlightActive()
     })
   })
+  highlightActive()
+}
 
-  if (path) loadDoc(path)
+function renderNodes(nodes, depth) {
+  return nodes.map(node => {
+    const hasChildren = node.children && node.children.length > 0
+    const label = getLabel(node.name)
+    const padding = depth * 16 + 8
+
+    if (hasChildren) {
+      const childHtml = renderNodes(node.children, depth + 1)
+      return `
+        <details ${depth === 0 ? 'open' : ''}>
+          <summary style="padding:4px 0 4px ${padding}px;cursor:pointer;color:#aaa;font-weight:600;font-size:13px">
+            ${label}
+          </summary>
+          ${childHtml}
+        </details>
+      `
+    }
+
+    return `
+      <a href="#" data-doc-link="${node.path}"
+         style="display:block;padding:4px 0 4px ${padding}px;color:#888;font-size:13px;text-decoration:none">
+        ${label}
+      </a>
+    `
+  }).join('')
+}
+
+function highlightActive() {
+  document.querySelectorAll('[data-doc-link]').forEach(a => {
+    const isActive = a.dataset.docLink === currentPath
+    a.style.color = isActive ? '#44aa88' : '#888'
+    a.style.fontWeight = isActive ? '600' : '400'
+  })
 }
 
 function loadDoc(path) {
   const container = document.getElementById('docs-content')
+  if (!container) return
   container.innerHTML = '<p style="color:#666">Cargando...</p>'
 
   fetch(`/api/docs/${path}/README.md`)
@@ -89,7 +165,34 @@ function loadDoc(path) {
       if (!r.ok) throw new Error('Not found')
       return r.text()
     })
-    .then(md => container.innerHTML = mdToHtml(md))
+    .then(md => {
+      currentPath = path
+      const crumbs = path.split('/').map((part, i, arr) => {
+        const p = arr.slice(0, i + 1).join('/')
+        const isLast = i === arr.length - 1
+        const label = getLabel(part)
+        if (isLast) return `<span style="color:#44aa88">${label}</span>`
+        return `<a href="#" data-crumb="${p}" style="color:#888;text-decoration:none">${label}</a>`
+      }).join(' <span style="color:#555">/</span> ')
+
+      container.innerHTML = `
+        <div style="font-size:13px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #333">${crumbs}</div>
+        ${mdToHtml(md)}
+      `
+
+      container.querySelectorAll('[data-crumb]').forEach(a => {
+        a.addEventListener('click', e => {
+          e.preventDefault()
+          const p = a.dataset.crumb
+          currentPath = p
+          history.replaceState(null, '', `#/docs/${p}`)
+          loadDoc(p)
+          highlightActive()
+        })
+      })
+
+      highlightActive()
+    })
     .catch(() => {
       container.innerHTML = mdToHtml(
         `# Documento no encontrado\n\nTodavía no hay documentación para esta sección.`

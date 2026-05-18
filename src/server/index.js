@@ -1,6 +1,6 @@
 import express from 'express'
 import { readFileSync, readdirSync, statSync } from 'fs'
-import { join, extname, dirname } from 'path'
+import { join, extname, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 import healthRouter from './routes/health.js'
 
@@ -22,6 +22,35 @@ app.get('/api/devlog', (req, res) => {
     res.json([])
   }
 })
+
+app.get('/api/docs/tree', (req, res) => {
+  try {
+    const tree = scanDocsTree(DOCS_DIR)
+    res.json(tree)
+  } catch {
+    res.json([])
+  }
+})
+
+function scanDocsTree(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true })
+  const items = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const fullPath = join(dir, entry.name)
+    let hasReadme = false
+    try { hasReadme = statSync(join(fullPath, 'README.md')).isFile() } catch {}
+    const children = scanDocsTree(fullPath)
+    if (hasReadme || children.length > 0) {
+      items.push({
+        name: entry.name,
+        path: relative(DOCS_DIR, fullPath),
+        children,
+      })
+    }
+  }
+  return items
+}
 
 app.get(/^\/api\/docs\/(.+)$/, (req, res) => {
   const subpath = req.params[0]

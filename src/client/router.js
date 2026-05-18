@@ -15,8 +15,8 @@ export class Router {
 
     const hash = location.hash.slice(1) || '/'
 
-    if (hash.startsWith('/docs/')) {
-      const path = hash.replace('/docs/', '')
+    if (hash === '/docs' || hash.startsWith('/docs/')) {
+      const path = hash === '/docs' ? '' : hash.replace('/docs/', '')
       if (this.docsHandler) this.docsHandler(path)
       return
     }
