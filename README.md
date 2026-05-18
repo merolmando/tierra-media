@@ -177,41 +177,14 @@ Sistema modular: el tipo de cuerpo determina qué animaciones y ataques tiene di
   - El pescado es caro en la montaña, barato en el puerto.
   - El mineral es barato en la mina de la montaña, caro en el puerto.
 
-## Herramientas de Desarrollo (Modding Tools)
+## Herramientas de desarrollo
 
-| Herramienta | Estado | Propósito |
-|---|---|---|
-| **Material Creator** | ✅ Existe | Crear materiales PBR (colores, texturas, propiedades mecánicas) |
-| **Texture Painter** | ✅ Existe | Editar texturas (atlas) usando materiales como pinceles |
-| **Voxel Modeler** | ⚠️ En desarrollo | Modelado 3D voxel: crear objetos, edificios, props |
-| **Studio** | ⚠️ Existe (básico) | Editor de mapas 3D: colocar modelos en el mundo |
-| **Animation / Rigging** | ❌ Pendiente | Añadir huesos a modelos voxel y definir animaciones |
-| **Editor de NPCs** | ❌ Pendiente | Crear plantillas de NPCs: stats, lógica, comportamiento |
-| **Editor de Mapas Proc.** | ❌ Pendiente | Diseñar biomas, estructuras y reglas de generación procedural |
-| **Editor de HUD/UI** | ❌ Pendiente | Crear interfaces, transiciones, overlays |
-| **Editor de Items/Recetas** | ❌ Pendiente | Definir objetos, materiales, recetas de crafting |
-| **Creador de Tiles** | ⏳ Pendiente | Editor de tiles pixel-art con pincel, línea, bote y capas multi-frame |
-| **Cortador de Texturas** | ❌ Pendiente | Subir spritesheets, seleccionar rectángulos y guardar como entidades |
-| **Baker de Luz** | ❌ Pendiente | Horneado de lightmap GPU para iluminación realista |
-| **Gestor de Entidades** | ❌ Pendiente | Administrar sprites, animaciones, emisores y propiedades |
-| **Visor de Atlas** | ❌ Pendiente | Visualizar el atlas de sprites completo |
-
-### Pipeline de producción
-
-```
-Material Creator ──→ Texture Painter ──→ Voxel Modeler ──→ Studio ──→ JUEGO
-                        ↓                     ↓
-                   Texturas (PBR)        Modelos + Huesos
-                                             ↓
-                                       Animation / Rigging
-                                             ↓
-                                       Editor de NPCs
-                                             ↓
-                                       Editor de Mapas Proc.
-
-Editor de Items ───→ define objetos y recetas que se usan en todo el pipeline
-Editor de HUD ─────→ define la interfaz del juego final
-```
+| Herramienta | Propósito |
+|---|---|
+| **Blender (modelador voxel)** | Modelado 3D voxel para crear objetos, edificios, props |
+| **Material Creator** | Crear materiales PBR (colores, texturas, propiedades mecánicas) |
+| **Texture Painter** | Editar texturas atlas y normal maps usando materiales como pinceles |
+| **Studio** | Editor de mapas 3D: colocar modelos en el mundo |
 
 ## Primera versión jugable
 
