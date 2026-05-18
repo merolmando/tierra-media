@@ -1,5 +1,5 @@
 import express from 'express'
-import { readFileSync, readdirSync, statSync } from 'fs'
+import { readFileSync, readdirSync, statSync, mkdirSync } from 'fs'
 import { join, extname, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 import healthRouter from './routes/health.js'
@@ -10,6 +10,9 @@ const PORT = process.env.PORT || 3000
 const DOCS_DIR = join(__dirname, '../../docs')
 const DEVLOG_PATH = join(__dirname, '../client/data/devlog.json')
 const DIST_DIR = join(__dirname, '../../dist')
+const DATA_DIR = join(__dirname, '../../data')
+const DATA_TYPES = ['materials', 'textures', 'models', 'maps']
+DATA_TYPES.forEach(t => mkdirSync(join(DATA_DIR, t), { recursive: true }))
 
 app.use(express.json())
 app.use('/api/health', healthRouter)

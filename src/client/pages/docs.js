@@ -53,6 +53,10 @@ const labels = {
   events: 'Eventos y misiones',
   controls: 'Controles',
   tools: 'Herramientas',
+  'material-creator': 'Material Creator',
+  'texture-painter': 'Texture Painter',
+  'voxel-modeler': 'Voxel Modeler',
+  studio: 'Studio',
   web: 'Frontend web',
   server: 'Servidor',
 }
