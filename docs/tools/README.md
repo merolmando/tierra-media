@@ -59,7 +59,18 @@ Tipos de recursos: `materials`, `textures`, `models`, `maps`.
   "color": "#666666",
   "roughness": 0.8,
   "metalness": 0.1,
-  "normalMapId": "uuid-de-textura"
+  "emissiveColor": "#000000",
+  "emissiveIntensity": 0,
+  "opacity": 1.0,
+  "weight": 5.0,
+  "strength": 100,
+  "stateOfMatter": "solid",
+  "textureId": null,
+  "textureScaleX": 1,
+  "textureScaleY": 1,
+  "textureInfluence": 1.0,
+  "normalMapId": null,
+  "normalMapInfluence": 1.0
 }
 ```
 

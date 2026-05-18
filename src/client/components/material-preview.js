@@ -44,6 +44,8 @@ export function initPreview(container) {
 
   let animating = true
   let prevTime = performance.now()
+  let loadedTexId = null
+  let loadedNormalId = null
 
   function animate() {
     if (!animating) return
@@ -76,13 +78,92 @@ export function initPreview(container) {
   })
   resizeObserver.observe(container)
 
+  function setTexture(texId, influence) {
+    if (!texId || texId === loadedTexId) return
+    loadedTexId = texId
+    fetch(`/api/resources/textures/${texId}`)
+      .then(r => r.json())
+      .then(data => {
+        const img = new Image()
+        img.onload = () => {
+          const tex = new THREE.Texture(img)
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+          mat.map = tex
+          mat.needsUpdate = true
+        }
+        img.src = data.image
+      })
+      .catch(() => {})
+  }
+
+  function setNormalMap(normalId, influence) {
+    if (!normalId || normalId === loadedNormalId) return
+    loadedNormalId = normalId
+    fetch(`/api/resources/textures/${normalId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.normalMap) return
+        const img = new Image()
+        img.onload = () => {
+          const tex = new THREE.Texture(img)
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+          mat.normalMap = tex
+          if (influence != null) mat.normalScale = new THREE.Vector2(influence, influence)
+          mat.needsUpdate = true
+        }
+        img.src = data.normalMap
+      })
+      .catch(() => {})
+  }
+
+  function applyTextureScale(sx, sy) {
+    if (mat.map) {
+      mat.map.repeat.set(sx || 1, sy || 1)
+      mat.map.needsUpdate = true
+    }
+    if (mat.normalMap) {
+      mat.normalMap.repeat.set(sx || 1, sy || 1)
+      mat.normalMap.needsUpdate = true
+    }
+  }
+
   return {
     updateMaterial(props) {
-      const m = mesh.material
-      if (props.color != null) m.color.set(props.color)
-      if (props.roughness != null) m.roughness = props.roughness
-      if (props.metalness != null) m.metalness = props.metalness
-      m.needsUpdate = true
+      if (props.color != null) mat.color.set(props.color)
+      if (props.roughness != null) mat.roughness = props.roughness
+      if (props.metalness != null) mat.metalness = props.metalness
+
+      if (props.emissiveColor != null && props.emissiveColor !== '#000000') {
+        mat.emissive.set(props.emissiveColor)
+      } else if (props.emissiveColor === '#000000') {
+        mat.emissive.set(0x000000)
+      }
+      if (props.emissiveIntensity != null) mat.emissiveIntensity = props.emissiveIntensity
+
+      if (props.opacity != null) {
+        mat.opacity = props.opacity
+        mat.transparent = props.opacity < 1
+      }
+
+      if (props.textureId != null) {
+        mat.map = null
+        loadedTexId = null
+        if (props.textureId) setTexture(props.textureId, props.textureInfluence)
+      }
+      if (props.normalMapId != null) {
+        mat.normalMap = null
+        loadedNormalId = null
+        if (props.normalMapId) setNormalMap(props.normalMapId, props.normalMapInfluence)
+      }
+
+      if (props.textureScaleX != null || props.textureScaleY != null) {
+        applyTextureScale(props.textureScaleX, props.textureScaleY)
+      }
+      if (props.normalMapInfluence != null && mat.normalMap) {
+        mat.normalScale = new THREE.Vector2(props.normalMapInfluence, props.normalMapInfluence)
+      }
+
+      mat.needsUpdate = true
     },
     destroy() {
       animating = false

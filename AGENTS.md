@@ -20,43 +20,35 @@
 | 6 | **Studio** | `maps/*.json` | Models, Materials, HUDs |
 | 7 | **Game** (runtime) | — | Maps, HUDs, Input Maps |
 
-## Fase actual — Material Creator (herramienta #1)
+## Fase actual — Texture Painter (herramienta #2, próxima)
 
-### Archivos a crear
-- `src/client/components/material-preview.js` — Preview 3D con esfera + luces + auto-rotación
-- `src/client/pages/material-creator.js` — Página con sidebar (lista) + preview + panel de propiedades
-
-### Archivos a modificar
-- `src/client/main.js` — Agregar ruta `/dev/material-creator` y cleanup
-- `src/client/pages/dev.js` — Convertir card de Material Creator en enlace clickeable
-
-### Layout de la página
+### Schema de Material (`materials/*.json`)
+```json
+{
+  "id": "uuid",
+  "name": "Piedra gris",
+  "color": "#666666",
+  "roughness": 0.8,
+  "metalness": 0.1,
+  "emissiveColor": "#000000",
+  "emissiveIntensity": 0,
+  "opacity": 1.0,
+  "weight": 5.0,
+  "strength": 100,
+  "stateOfMatter": "solid",
+  "textureId": null,
+  "textureScaleX": 1,
+  "textureScaleY": 1,
+  "textureInfluence": 1.0,
+  "normalMapId": null,
+  "normalMapInfluence": 1.0
+}
 ```
-┌──────────────────────────────────────────────────────┐
-│  Material Creator                     [Nuevo]         │
-├────────────┬──────────────────────────┬───────────────┤
-│            │                          │  Nombre:      │
-│  Lista     │      Preview 3D          │  [input]      │
-│  de        │      (esfera gira)       │               │
-│  mate-     │                          │  Color:       │
-│  riales    │                          │  [picker]     │
-│            │                          │               │
-│  Piedra █  │                          │  Roughness:   │
-│  Madera █  │                          │  [==●=====]   │
-│  Roca   █  │                          │               │
-│            │                          │  Metalness:   │
-│            │                          │  [●=======]   │
-│            │                          │               │
-│            │                          │  Normal Map:  │
-│            │                          │  [dropdown ▼] │
-│            │                          │               │
-│            │                          │  [Guardar]    │
-│            │                          │  [Eliminar]   │
-└────────────┴──────────────────────────┴───────────────┘
-```
+`stateOfMatter`: `solid` | `liquid` | `gas` | `plasma`
 
 ### API utilizada
 - `GET /api/resources/materials` — listar
 - `POST /api/resources/materials` — crear
 - `PUT /api/resources/materials/:id` — actualizar
 - `DELETE /api/resources/materials/:id` — eliminar
+- `GET /api/resources/textures` — para selectores de texture/normal map
