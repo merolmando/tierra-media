@@ -3,6 +3,8 @@ import { initPreview } from '../components/material-preview.js'
 let preview = null
 let currentId = null
 let textureCache = []
+let pendingTexId = ''
+let pendingNormId = ''
 
 const DEFAULTS = {
   name: '',
@@ -122,8 +124,14 @@ function populateTextureSelectors() {
     `<option value="${t.id}">${escapeHtml(t.name)}</option>`
   ).join('')
   const none = '<option value="">— Sin textura —</option>'
-  if (sel) sel.innerHTML = none + opts
-  if (norm) norm.innerHTML = none + opts
+  if (sel) {
+    sel.innerHTML = none + opts
+    if (pendingTexId) sel.value = pendingTexId
+  }
+  if (norm) {
+    norm.innerHTML = none + opts
+    if (pendingNormId) norm.value = pendingNormId
+  }
 }
 
 function renderProps(m) {
@@ -252,6 +260,9 @@ function renderProps(m) {
   el.querySelector('#mc-light').addEventListener('input', updatePreview)
   el.querySelector('#mc-autorotate').addEventListener('change', updatePreview)
   el.querySelector('#mc-save').addEventListener('click', saveMaterial)
+
+  pendingTexId = m.textureId || ''
+  pendingNormId = m.normalMapId || ''
 
   const delBtn = el.querySelector('#mc-delete')
   if (currentId) {
@@ -387,4 +398,6 @@ export function cleanupMaterialCreator() {
   }
   currentId = null
   textureCache = []
+  pendingTexId = ''
+  pendingNormId = ''
 }
