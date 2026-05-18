@@ -46,6 +46,14 @@
 ```
 `stateOfMatter`: `solid` | `liquid` | `gas` | `plasma`
 
+### Voxel Modeler interaction (manual drag)
+- TransformControls `enabled: false` — solo se usa para el gizmo visual (attach/detach)
+- `mousedown` selecciona primitiva; si mouse se mueve >3px se inicia drag manual
+- `mousemove` calcula delta 3D desde delta 2D proyectado en plano cámara
+- Ejes X/Y/Z constriñen movimiento/rotación/escala al eje elegido (toggle con tecla)
+- Y clamp: posición.y no baja de 0 en translate mode
+- Ghosts no son draggable — solo se posicionan con inputs numéricos
+
 ### API utilizada
 - `GET /api/resources/materials` — listar
 - `POST /api/resources/materials` — crear

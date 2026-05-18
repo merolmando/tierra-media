@@ -28,14 +28,14 @@ const DEFAULTS = {
 export function renderMaterialCreator() {
   const app = document.getElementById('app')
   app.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h1 style="margin:0">Material Creator</h1>
+    <div class="tool-header">
+      <h1>Material Creator</h1>
       <button id="mc-new" class="btn-primary">+ Nuevo</button>
     </div>
-    <div id="mc-layout" style="display:grid;grid-template-columns:200px 1fr 300px;gap:16px;height:calc(100vh - 180px)">
-      <div id="mc-list" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:8px;overflow-y:auto"></div>
-      <div id="mc-preview" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;overflow:hidden"></div>
-      <div id="mc-props" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;overflow-y:auto"></div>
+    <div class="tool-layout">
+      <div id="mc-list" class="tool-panel"></div>
+      <div id="mc-preview" class="tool-viewport"></div>
+      <div id="mc-props" class="tool-props"></div>
     </div>
   `
 

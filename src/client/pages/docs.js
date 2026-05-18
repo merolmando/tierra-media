@@ -52,6 +52,8 @@ const labels = {
   'material-creator': 'Material Creator',
   'texture-painter': 'Texture Painter',
   'voxel-modeler': 'Voxel Modeler',
+  'hud-editor': 'HUD Editor',
+  'input-mapper': 'Input Mapper',
   studio: 'Studio',
 }
 

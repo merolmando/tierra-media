@@ -11,28 +11,21 @@ Todas las herramientas comparten una arquitectura común:
 ## Dependencias entre herramientas
 
 ```
-Material Creator        Texture Painter        Voxel Modeler
-     │                        │                     │
-     │  ┌─────────────────────┘                     │
-     │  │  Textura (diffuse, normal, rough)          │
-     │  │        ↑                                   │
-     │  └────────┘                                   │
-     │                                               │
-     │  ┌─────────────────────────────────────────────┘
-     │  │  Material (color, roughness, maps)           │
-     └──┘                                             │
-          ↓                                           │
-     Studio ──────────────────────────────────────────┘
-          ↓
-       Juego
+   Material Creator ──→   Texture Painter ──→   Voxel Modeler ──┐
+                         4. HUD Editor ─────────────────────────┤
+                         5. Input Mapper ───────────────────────┤
+                                                                ↓
+                                                      6. Studio ──→ 7. Game
 ```
 
 | Herramienta | Produce | Consume de |
 |---|---|---|
 | **Material Creator** | Material (color, roughness, metalness, mapas) | — |
 | **Texture Painter** | Textura (imagen PNG + normal map) | Material (como pinceles) |
-| **Voxel Modeler** | Modelo (malla voxel + asignación de materiales) | Material (por voxel/cara) |
-| **Studio** | Mapa (modelos posicionados en el mundo) | Modelo + Material |
+| **Voxel Modeler** | Modelo (malla primitivas + materiales) | Material (por primitiva) |
+| **HUD Editor** | HUD (layout de UI con bars/text/image/button) | Textures, Input Maps |
+| **Input Mapper** | Input Map (bindings tecla→acción) | — |
+| **Studio** | Mapa (modelos posicionados en el mundo) | Modelo + Material + HUD |
 
 ## API de recursos
 
@@ -47,7 +40,7 @@ PUT    /api/resources/:type/:id       → actualiza un recurso
 DELETE /api/resources/:type/:id       → elimina un recurso
 ```
 
-Tipos de recursos: `materials`, `textures`, `models`, `maps`.
+Tipos de recursos: `materials`, `textures`, `models`, `maps`, `huds`, `inputMaps`.
 
 ## Estructura de datos
 
@@ -92,10 +85,60 @@ Tipos de recursos: `materials`, `textures`, `models`, `maps`.
 {
   "id": "uuid",
   "name": "Roca pequeña",
-  "voxels": [
-    { "x": 0, "y": 0, "z": 0, "materialId": "uuid-material" }
-  ],
-  "size": [4, 4, 4]
+  "primitives": [
+    {
+      "id": "uuid",
+      "type": "box",
+      "position": [0, 0.5, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "params": { "width": 1, "height": 1, "depth": 1 },
+      "materialId": "uuid-material"
+    }
+  ]
+}
+```
+
+### HUD
+```json
+{
+  "id": "uuid",
+  "name": "Main HUD",
+  "resolution": { "width": 1920, "height": 1080 },
+  "elements": [
+    {
+      "id": "uuid",
+      "type": "bar",
+      "label": "HP",
+      "anchor": "bottom-left",
+      "position": { "x": 20, "y": 20 },
+      "size": { "width": 200, "height": 24 },
+      "backgroundColor": "#222222",
+      "fillColor": "#cc3333",
+      "borderColor": "#555555",
+      "borderWidth": 1,
+      "textureId": null,
+      "fontFamily": "monospace",
+      "fontSize": 14,
+      "fontColor": "#ffffff",
+      "text": "HP",
+      "opacity": 1.0,
+      "visible": true,
+      "action": ""
+    }
+  ]
+}
+```
+
+### Input Map
+```json
+{
+  "id": "uuid",
+  "name": "Default Controls",
+  "bindings": [
+    { "id": "uuid", "action": "move_forward", "code": "KeyW" },
+    { "id": "uuid", "action": "attack", "code": "Mouse0" }
+  ]
 }
 ```
 
@@ -117,6 +160,8 @@ data/
 ├── materials/     → .json por material
 ├── textures/      → .json + .png
 ├── models/        → .json
+├── huds/          → .json
+├── inputMaps/     → .json
 └── maps/          → .json
 ```
 

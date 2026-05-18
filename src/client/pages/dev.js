@@ -1,9 +1,9 @@
 const tools = [
   { name: 'Material Creator', desc: 'Crear materiales PBR con colores, texturas y propiedades mecánicas', route: '/dev/material-creator', status: 'ready' },
-  { name: 'Voxel Modeler', desc: 'Modelado 3D voxel para crear objetos, edificios y props', route: null, status: 'pending' },
+  { name: 'Voxel Modeler', desc: 'Modelado 3D voxel para crear objetos, edificios y props', route: '/dev/voxel-modeler', status: 'ready' },
   { name: 'Texture Painter', desc: 'Editar texturas atlas y normal maps usando materiales como pinceles', route: '/dev/texture-painter', status: 'ready' },
-  { name: 'HUD Editor', desc: 'Editor de HUDs con botones, bars y elementos de UI', route: null, status: 'pending' },
-  { name: 'Input Mapper', desc: 'Mapeo de teclas y botones para acciones del juego', route: null, status: 'pending' },
+  { name: 'HUD Editor', desc: 'Editor de HUDs con botones, bars y elementos de UI', route: '/dev/hud-editor', status: 'ready' },
+  { name: 'Input Mapper', desc: 'Mapeo de teclas y botones para acciones del juego', route: '/dev/input-mapper', status: 'ready' },
   { name: 'Studio', desc: 'Editor de mapas 3D para colocar modelos en el mundo', route: null, status: 'pending' },
 ]
 

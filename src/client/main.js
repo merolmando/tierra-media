@@ -7,6 +7,9 @@ import { renderDev } from './pages/dev.js'
 import { renderDocs } from './pages/docs.js'
 import { renderMaterialCreator, cleanupMaterialCreator } from './pages/material-creator.js'
 import { renderTexturePainter, cleanupTexturePainter } from './pages/texture-painter.js'
+import { renderVoxelModeler, cleanupVoxelModeler } from './pages/voxel-modeler.js'
+import { renderHudEditor, cleanupHudEditor } from './pages/hud-editor.js'
+import { renderInputMapper, cleanupInputMapper } from './pages/input-mapper.js'
 
 renderNavbar()
 
@@ -17,6 +20,9 @@ const router = new Router({
   '/dev': renderDev,
   '/dev/material-creator': renderMaterialCreator,
   '/dev/texture-painter': renderTexturePainter,
+  '/dev/voxel-modeler': renderVoxelModeler,
+  '/dev/hud-editor': renderHudEditor,
+  '/dev/input-mapper': renderInputMapper,
 }, renderDocs)
 
 router.onBeforeChange(() => {
@@ -29,6 +35,15 @@ router.onBeforeChange(() => {
   }
   if (hash !== 'dev/texture-painter' && hash !== '/dev/texture-painter') {
     cleanupTexturePainter()
+  }
+  if (hash !== 'dev/voxel-modeler' && hash !== '/dev/voxel-modeler') {
+    cleanupVoxelModeler()
+  }
+  if (hash !== 'dev/hud-editor' && hash !== '/dev/hud-editor') {
+    cleanupHudEditor()
+  }
+  if (hash !== 'dev/input-mapper' && hash !== '/dev/input-mapper') {
+    cleanupInputMapper()
   }
 })
 

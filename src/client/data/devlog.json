@@ -26,5 +26,56 @@
       "Eventos de mouse atados al canvas, no a window",
       "Documentación técnica en docs/ engine/ y system/"
     ]
+  },
+  {
+    "date": "2026-05-19",
+    "title": "Hito 2 — Material Creator",
+    "entries": [
+      "Preview 3D del material con esfera iluminada",
+      "Propiedades PBR: color, roughness, metalness, emissive, opacidad",
+      "Propiedades físicas: peso, resistencia, estado de materia (sólido/líquido/gas/plasma)",
+      "Selectores de textura difusa y normal map desde galería",
+      "Sliders de influencia y escala de texturas",
+      "CRUD completo con API REST en /api/resources/materials",
+      "Zoom y rotación del preview con scroll + drag"
+    ]
+  },
+  {
+    "date": "2026-05-19",
+    "title": "Hito 3 — Texture Painter",
+    "entries": [
+      "Canvas 2D con textura atlas (64×64 default)",
+      "Pinceles desde materiales del Material Creator",
+      "Herramientas: pincel, relleno, goma, altura",
+      "Normal map generado automáticamente desde altura con filtro Sobel",
+      "Overlay de normales semi-transparente con toggle checkbox",
+      "Caché de normal map: solo se regenera al cambiar altura",
+      "Zoom 2D con scroll y arrastre con shift+drag",
+      "Texturas almacenadas como base64 PNG en JSON"
+    ]
+  },
+  {
+    "date": "2026-05-19",
+    "title": "Hito 4 — Voxel Modeler + HUD Editor + Input Mapper",
+    "entries": [
+      "Voxel Modeler: primitivas 3D (cubo/esfera/cilindro/cono/toro/plano)",
+      "Transformaciones: mover/rotar/escalar con gizmo visual y teclas G/M/Tab",
+      "Drag manual con ray-plane intersection para movimiento 1:1",
+      "Y-clamp con bottomOffset: primitivas se sientan en el piso sin atravesarlo",
+      "Operaciones CSG booleanas (fusionar/cortar/intersectar)",
+      "Ghost objects con Enter para confirmar, Esc para cancelar",
+      "Clonar primitivas con tecla D",
+      "Selector de material por primitiva desde Material Creator",
+      "Fondo de viewport más claro (#3a3a3a) para mejor visibilidad",
+      "HUD Editor: editor visual de HUDs con canvas 2D",
+      "4 tipos de elemento: bar, text, image, button",
+      "Drag para reposicionar elementos en el preview",
+      "Propiedades: anchor, posición, tamaño, colores, opacidad, visibilidad",
+      "Botones pueden bindearse a acciones del Input Mapper",
+      "Input Mapper: binding de teclas y mouse a 17 acciones del juego",
+      "Grabación de teclas con detección de conflictos (reasignación)",
+      "Defaults: WASD + controles típicos con un botón",
+      "Conexiones entre herramientas completadas"
+    ]
   }
 ]

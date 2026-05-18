@@ -7,7 +7,9 @@ let isDrawing = false
 let brushColor = '#888888'
 let brushSize = 4
 let tool = 'brush'
-let activeLayer = 'diffuse'
+let showNormalOverlay = true
+let normalCache = null
+let normalDirty = true
 let textureSize = 64
 let materialList = []
 let heightStrength = 2
@@ -16,14 +18,14 @@ let heightValue = 128
 export function renderTexturePainter() {
   const app = document.getElementById('app')
   app.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h1 style="margin:0">Texture Painter</h1>
+    <div class="tool-header">
+      <h1>Texture Painter</h1>
       <button id="tp-new" class="btn-primary">+ Nueva</button>
     </div>
-    <div id="tp-layout" style="display:grid;grid-template-columns:200px 1fr 240px;gap:16px;height:calc(100vh - 180px)">
-      <div id="tp-list" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:8px;overflow-y:auto"></div>
-      <div id="tp-canvas-container" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
-      <div id="tp-props" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;overflow-y:auto"></div>
+    <div class="tool-layout">
+      <div id="tp-list" class="tool-panel"></div>
+      <div id="tp-canvas-container" class="tool-viewport"></div>
+      <div id="tp-props" class="tool-props"></div>
     </div>
   `
 
@@ -89,10 +91,7 @@ function resizeDisplay() {
   const ch = container.clientHeight
   if (cw === 0 || ch === 0) return
 
-  const src = activeLayer === 'normal'
-    ? heightToNormal(heightCanvas, heightStrength)
-    : (activeLayer === 'height' ? heightCanvas : diffuseCanvas)
-  const aspect = src.width / src.height
+  const aspect = diffuseCanvas.width / diffuseCanvas.height
 
   let dw, dh
   if (cw / ch > aspect) {
@@ -111,17 +110,20 @@ function resizeDisplay() {
 
 function renderToDisplay() {
   if (!displayCanvas || !diffuseCanvas) return
-  let src
-  if (activeLayer === 'diffuse') {
-    src = diffuseCanvas
-  } else if (activeLayer === 'height') {
-    src = heightCanvas
-  } else {
-    src = heightToNormal(heightCanvas, heightStrength)
+  displayCanvas.width = diffuseCanvas.width
+  displayCanvas.height = diffuseCanvas.height
+  displayCtx.drawImage(diffuseCanvas, 0, 0)
+
+  if (showNormalOverlay) {
+    if (normalDirty) {
+      normalCache = heightToNormal(heightCanvas, heightStrength)
+      normalDirty = false
+    }
+    displayCtx.globalAlpha = 0.35
+    displayCtx.drawImage(normalCache, 0, 0)
+    displayCtx.globalAlpha = 1
   }
-  displayCanvas.width = src.width
-  displayCanvas.height = src.height
-  displayCtx.drawImage(src, 0, 0)
+
   resizeDisplay()
 }
 
@@ -156,14 +158,13 @@ function onMouseUp() {
 }
 
 function paint(e) {
-  if (activeLayer === 'normal') return
-
-  const src = activeLayer === 'height' ? heightCanvas : diffuseCanvas
+  const isHeight = tool === 'height'
+  const src = isHeight ? heightCanvas : diffuseCanvas
   const ctx = src.getContext('2d')
   const pos = getCanvasCoords(e)
   const size = brushSize
 
-  const paintColor = activeLayer === 'height'
+  const paintColor = isHeight
     ? `rgb(${heightValue},${heightValue},${heightValue})`
     : brushColor
 
@@ -185,6 +186,7 @@ function paint(e) {
   }
 
   ctx.restore()
+  if (isHeight) normalDirty = true
   renderToDisplay()
 }
 
@@ -379,29 +381,25 @@ function renderProps(t) {
 
     <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:8px">HERRAMIENTAS</div>
 
-    <div style="display:flex;gap:4px;margin-bottom:10px">
-      <button class="tp-tool-btn ${tool === 'brush' ? 'tp-tool-active' : ''}" data-tool="brush" style="flex:1;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:13px;text-align:center">🖌</button>
-      <button class="tp-tool-btn ${tool === 'eraser' ? 'tp-tool-active' : ''}" data-tool="eraser" style="flex:1;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:13px;text-align:center">🧹</button>
-      <button class="tp-tool-btn ${tool === 'fill' ? 'tp-tool-active' : ''}" data-tool="fill" style="flex:1;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:13px;text-align:center">🪣</button>
+    <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="tp-tool-btn ${tool === 'brush' ? 'tp-tool-active' : ''}" data-tool="brush" style="flex:1;min-width:40px;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Pincel</button>
+      <button class="tp-tool-btn ${tool === 'fill' ? 'tp-tool-active' : ''}" data-tool="fill" style="flex:1;min-width:40px;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Relleno</button>
+      <button class="tp-tool-btn ${tool === 'eraser' ? 'tp-tool-active' : ''}" data-tool="eraser" style="flex:1;min-width:40px;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Goma</button>
+      <button class="tp-tool-btn ${tool === 'height' ? 'tp-tool-active' : ''}" data-tool="height" style="flex:1;min-width:40px;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Altura</button>
     </div>
 
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Tamaño de pincel <span id="tp-brush-size-label" style="color:#666">${brushSize}px</span></label>
     <input id="tp-brush-size" type="range" min="1" max="32" step="1" value="${brushSize}" style="width:100%;margin-bottom:12px;accent-color:#44aa88;height:4px">
 
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Pincel (material)</label>
-    <select id="tp-brush-mat" style="width:100%;margin-bottom:16px;background:#222;color:#ddd;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:13px">
+    <select id="tp-brush-mat" style="width:100%;margin-bottom:12px;background:#222;color:#ddd;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:13px">
       <option value="">— Seleccionar material —</option>
     </select>
 
-    <hr style="border:none;border-top:1px solid #2a2a2a;margin:12px 0">
-
-    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:8px">CAPA</div>
-
-    <div style="display:flex;gap:4px;margin-bottom:10px">
-      <button class="tp-layer-btn ${activeLayer === 'diffuse' ? 'tp-layer-active' : ''}" data-layer="diffuse" style="flex:1;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Difusa</button>
-      <button class="tp-layer-btn ${activeLayer === 'height' ? 'tp-layer-active' : ''}" data-layer="height" style="flex:1;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Altura</button>
-      <button class="tp-layer-btn ${activeLayer === 'normal' ? 'tp-layer-active' : ''}" data-layer="normal" style="flex:1;padding:6px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px">Normal</button>
-    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;margin-bottom:12px;cursor:pointer">
+      <input id="tp-overlay" type="checkbox" ${showNormalOverlay ? 'checked' : ''} style="accent-color:#44aa88">
+      Ver normal map
+    </label>
 
     <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;margin-bottom:4px;cursor:pointer">
       <span>Intensidad <span id="tp-height-str-label" style="color:#666">${heightStrength.toFixed(1)}</span></span>
@@ -427,13 +425,9 @@ function renderProps(t) {
       btn.classList.add('tp-tool-active')
     })
   })
-  el.querySelectorAll('.tp-layer-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      activeLayer = btn.dataset.layer
-      el.querySelectorAll('.tp-layer-btn').forEach(b => b.classList.remove('tp-layer-active'))
-      btn.classList.add('tp-layer-active')
-      renderToDisplay()
-    })
+  el.querySelector('#tp-overlay').addEventListener('change', () => {
+    showNormalOverlay = document.getElementById('tp-overlay').checked
+    renderToDisplay()
   })
   el.querySelector('#tp-brush-size').addEventListener('input', () => {
     brushSize = parseInt(el.querySelector('#tp-brush-size').value)
@@ -445,14 +439,15 @@ function renderProps(t) {
     fetch(`/api/resources/materials/${matId}`)
       .then(r => r.json())
       .then(mat => {
-        brushColor = activeLayer === 'height' ? mat.color || '#888888' : mat.color || '#888888'
+        brushColor = mat.color || '#888888'
       })
       .catch(() => {})
   })
   el.querySelector('#tp-height-str').addEventListener('input', () => {
     heightStrength = parseFloat(el.querySelector('#tp-height-str').value)
     document.getElementById('tp-height-str-label').textContent = heightStrength.toFixed(1)
-    if (activeLayer === 'normal') renderToDisplay()
+    normalDirty = true
+    if (showNormalOverlay) renderToDisplay()
   })
   el.querySelector('#tp-height-val').addEventListener('input', () => {
     heightValue = parseInt(el.querySelector('#tp-height-val').value)
@@ -553,7 +548,6 @@ export function cleanupTexturePainter() {
   brushColor = '#888888'
   brushSize = 4
   tool = 'brush'
-  activeLayer = 'diffuse'
   textureSize = 64
   materialList = []
   heightStrength = 2
