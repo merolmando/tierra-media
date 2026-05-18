@@ -5,10 +5,10 @@ let displayCanvas = null
 let displayCtx = null
 let isDrawing = false
 let brushColor = '#888888'
-let brushSize = 16
+let brushSize = 4
 let tool = 'brush'
 let activeLayer = 'diffuse'
-let textureSize = 512
+let textureSize = 64
 let materialList = []
 
 export function renderTexturePainter() {
@@ -33,7 +33,7 @@ export function renderTexturePainter() {
 
 function newTexture() {
   currentId = null
-  textureSize = 512
+  textureSize = 64
   initCanvases(textureSize)
   fillCanvas(diffuseCanvas, '#888888')
   fillCanvas(normalCanvas, '#8080ff')
@@ -238,7 +238,7 @@ function renderProps(t) {
     ${!currentId ? `
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Tamaño</label>
     <select id="tp-size" style="width:100%;margin-bottom:16px;background:#222;color:#ddd;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:13px">
-      ${[256, 512, 1024].map(s => `<option value="${s}" ${(t.size || 512) === s ? 'selected' : ''}>${s}×${s}</option>`).join('')}
+      ${[64, 128, 256].map(s => `<option value="${s}" ${(t.size || 64) === s ? 'selected' : ''}>${s}×${s}</option>`).join('')}
     </select>
     <button id="tp-apply-size" class="btn-primary" style="width:100%;margin-bottom:16px">Aplicar tamaño</button>
     ` : ''}
@@ -254,7 +254,7 @@ function renderProps(t) {
     </div>
 
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Tamaño de pincel <span id="tp-brush-size-label" style="color:#666">${brushSize}px</span></label>
-    <input id="tp-brush-size" type="range" min="2" max="128" step="1" value="${brushSize}" style="width:100%;margin-bottom:12px;accent-color:#44aa88;height:4px">
+    <input id="tp-brush-size" type="range" min="1" max="32" step="1" value="${brushSize}" style="width:100%;margin-bottom:12px;accent-color:#44aa88;height:4px">
 
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Pincel (material)</label>
     <select id="tp-brush-mat" style="width:100%;margin-bottom:16px;background:#222;color:#ddd;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:13px">
