@@ -10,5 +10,21 @@
       "Configuración de scripts dev (servidor + HMR), build y start",
       "Creada estructura de documentación docs/ con 4 categorías base"
     ]
+  },
+  {
+    "date": "2026-05-19",
+    "title": "Hito 1 — Núcleo gráfico",
+    "entries": [
+      "Motor Three.js con escena, luces ambient/direccional/fill y sombras PCFSoft",
+      "Grid 20×20 con ejes XYZ coloreados y labels (sprites)",
+      "6 presets de cámara: perspectiva, top-down, frontal, laterales y trasera",
+      "Pan con drag, órbita con Ctrl+drag, zoom con rueda del mouse",
+      "Selección de objetos con raycasting (coordenadas relativas al canvas)",
+      "Objeto seleccionado se resalta y la órbita se centra en él",
+      "Slider de luz direccional (0–360°) en el HUD",
+      "Brújula en HUD actualizada en tiempo real según azimuth de cámara",
+      "Eventos de mouse atados al canvas, no a window",
+      "Documentación técnica en docs/ engine/ y system/"
+    ]
   }
 ]

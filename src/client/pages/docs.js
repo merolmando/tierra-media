@@ -33,12 +33,66 @@ function mdToHtml(md) {
   return '<p>' + html + '</p>'
 }
 
-export function renderDocs() {
+const docsTree = [
+  { name: 'engine', label: 'Motor gráfico', children: [
+    { path: 'engine/rendering', label: 'Renderizado' },
+    { path: 'engine/camera', label: 'Cámara' },
+    { path: 'engine/raycaster', label: 'Selección' },
+    { path: 'engine/grid', label: 'Grid y ejes' },
+  ]},
+  { name: 'system', label: 'Sistemas', children: [
+    { path: 'system/web', label: 'Frontend web' },
+    { path: 'system/server', label: 'Servidor' },
+  ]},
+]
+
+export function renderDocs(path) {
   const app = document.getElementById('app')
+
+  const treeHtml = docsTree.map(group => `
+    <details open>
+      <summary>${group.label}</summary>
+      ${group.children.map(c => `
+        <a href="#" data-doc="${c.path}">${c.label}</a>
+      `).join('')}
+    </details>
+  `).join('')
+
   app.innerHTML = `
-    <div style="text-align:center;padding:60px 0">
-      <h1>Documentación</h1>
-      <p style="color:#666">Todavía no hay documentación. Consultá el <a href="/README.md">README</a> por ahora.</p>
+    <h1>Documentación</h1>
+    <div style="display:grid;grid-template-columns:240px 1fr;gap:24px">
+      <div class="docs-tree">${treeHtml}</div>
+      <div class="docs-content" id="docs-content">
+        <p style="color:#666">Seleccioná un tema del árbol para ver su documentación.</p>
+      </div>
     </div>
   `
+
+  app.querySelectorAll('[data-doc]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault()
+      const docPath = a.dataset.doc
+      history.replaceState(null, '', `#/docs/${docPath}`)
+      loadDoc(docPath)
+    })
+  })
+
+  if (path) loadDoc(path)
+}
+
+function loadDoc(path) {
+  const container = document.getElementById('docs-content')
+  container.innerHTML = '<p style="color:#666">Cargando...</p>'
+
+  fetch(`/api/docs/${path}/README.md`)
+    .then(r => {
+      if (!r.ok) throw new Error('Not found')
+      return r.text()
+    })
+    .then(md => container.innerHTML = mdToHtml(md))
+    .catch(() => {
+      container.innerHTML = mdToHtml(
+        `# Documento no encontrado\n\nTodavía no hay documentación para esta sección.`
+      )
+    })
 }
