@@ -28,7 +28,9 @@ export function initPreview(container) {
   fillLight.position.set(-3, 1, -3)
   scene.add(fillLight)
 
-  let angle = 0
+  let lightAngle = 0
+  let autoRotate = true
+  let camDist = 5
 
   const geo = new THREE.SphereGeometry(1.5, 64, 64)
   const mat = new THREE.MeshStandardMaterial({
@@ -47,6 +49,16 @@ export function initPreview(container) {
   let loadedTexId = null
   let loadedNormalId = null
 
+  function updateCamPos() {
+    camera.position.set(camDist * 0.6, camDist * 0.4, camDist)
+    camera.lookAt(0, 0, 0)
+  }
+
+  function updateLightPos() {
+    const rad = lightAngle * Math.PI / 180
+    keyLight.position.set(6 * Math.sin(rad), 4, 6 * Math.cos(rad))
+  }
+
   function animate() {
     if (!animating) return
     requestAnimationFrame(animate)
@@ -55,9 +67,10 @@ export function initPreview(container) {
     const dt = (now - prevTime) / 1000
     prevTime = now
 
-    angle += dt * 0.5
-    const r = 6
-    keyLight.position.set(r * Math.sin(angle), 4, r * Math.cos(angle))
+    if (autoRotate) {
+      lightAngle = (lightAngle + dt * 30) % 360
+      updateLightPos()
+    }
 
     mesh.rotation.y += dt * 0.3
     mesh.rotation.x += dt * 0.1
@@ -66,6 +79,12 @@ export function initPreview(container) {
   }
 
   animate()
+
+  renderer.domElement.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    camDist = Math.max(2, Math.min(15, camDist + e.deltaY * 0.01))
+    updateCamPos()
+  }, { passive: false })
 
   const resizeObserver = new ResizeObserver(() => {
     const cw = container.clientWidth
@@ -128,6 +147,13 @@ export function initPreview(container) {
   }
 
   return {
+    setLightAngle(deg) {
+      lightAngle = deg
+      updateLightPos()
+    },
+    setAutoRotate(on) {
+      autoRotate = on
+    },
     updateMaterial(props) {
       if (props.color != null) mat.color.set(props.color)
       if (props.roughness != null) mat.roughness = props.roughness

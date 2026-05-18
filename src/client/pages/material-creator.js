@@ -99,6 +99,8 @@ function newMaterial() {
   currentId = null
   renderProps({ ...DEFAULTS })
   preview.updateMaterial({ ...DEFAULTS })
+  preview.setLightAngle(0)
+  preview.setAutoRotate(true)
 }
 
 function loadTextureList() {
@@ -155,6 +157,17 @@ function renderProps(m) {
 
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Intensidad emisiva <span id="mc-emissiveInt-label" style="color:#666">${fmt(m.emissiveIntensity, 1)}</span></label>
     <input id="mc-emissiveInt" type="range" min="0" max="10" step="0.1" value="${m.emissiveIntensity ?? 0}" style="width:100%;margin-bottom:10px;accent-color:#44aa88;height:4px">
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:12px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:8px">PREVIEW</div>
+
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Ángulo de luz <span id="mc-light-label" style="color:#666">0°</span></label>
+    <input id="mc-light" type="range" min="0" max="360" step="1" value="0" style="width:100%;margin-bottom:6px;accent-color:#44aa88;height:4px">
+
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;margin-bottom:10px;cursor:pointer">
+      <input id="mc-autorotate" type="checkbox" checked style="accent-color:#44aa88"> Auto-rotar luz
+    </label>
 
     <hr style="border:none;border-top:1px solid #2a2a2a;margin:12px 0">
 
@@ -228,6 +241,8 @@ function renderProps(m) {
   el.querySelector('#mc-texInfl').addEventListener('input', updatePreview)
   el.querySelector('#mc-normalmap').addEventListener('change', updatePreview)
   el.querySelector('#mc-normInfl').addEventListener('input', updatePreview)
+  el.querySelector('#mc-light').addEventListener('input', updatePreview)
+  el.querySelector('#mc-autorotate').addEventListener('change', updatePreview)
   el.querySelector('#mc-save').addEventListener('click', saveMaterial)
 
   const delBtn = el.querySelector('#mc-delete')
@@ -256,8 +271,13 @@ function updatePreview() {
   setLabel('mc-emissiveInt-label', vals.emissiveIntensity, 1)
   setLabel('mc-texInfl-label', vals.textureInfluence, 2)
   setLabel('mc-normInfl-label', vals.normalMapInfluence, 2)
+  setLabel('mc-light-label', vals.lightAngle, 0)
 
-  if (preview) preview.updateMaterial(vals)
+  if (preview) {
+    preview.updateMaterial(vals)
+    if (vals.lightAngle != null) preview.setLightAngle(vals.lightAngle)
+    if (vals.autoRotate != null) preview.setAutoRotate(vals.autoRotate)
+  }
 }
 
 function readForm() {
@@ -281,14 +301,34 @@ function readForm() {
     textureInfluence: parseFloat(g('mc-texInfl')?.value || 1),
     normalMapId: g('mc-normalmap')?.value || null,
     normalMapInfluence: parseFloat(g('mc-normInfl')?.value || 1),
+    lightAngle: parseFloat(g('mc-light')?.value || 0),
+    autoRotate: g('mc-autorotate')?.checked ?? true,
   }
 }
 
 function saveMaterial() {
-  const data = readForm()
-  if (!data || !data.name.trim()) {
+  const all = readForm()
+  if (!all || !all.name.trim()) {
     alert('El nombre es obligatorio')
     return
+  }
+  const data = {
+    name: all.name,
+    color: all.color,
+    roughness: all.roughness,
+    metalness: all.metalness,
+    opacity: all.opacity,
+    emissiveColor: all.emissiveColor,
+    emissiveIntensity: all.emissiveIntensity,
+    weight: all.weight,
+    strength: all.strength,
+    stateOfMatter: all.stateOfMatter,
+    textureId: all.textureId,
+    textureScaleX: all.textureScaleX,
+    textureScaleY: all.textureScaleY,
+    textureInfluence: all.textureInfluence,
+    normalMapId: all.normalMapId,
+    normalMapInfluence: all.normalMapInfluence,
   }
 
   const method = currentId ? 'PUT' : 'POST'
