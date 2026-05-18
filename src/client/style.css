@@ -157,6 +157,7 @@ a { color: #44aa88; }
 .status-done { background: #1a3a2a; color: #6cdbae; }
 .status-wip { background: #3a3a1a; color: #dbcd6c; }
 .status-pending { background: #2a1a1a; color: #db6c6c; }
+.status-ready { background: #1a3a2a; color: #6cdbae; }
 
 /* Game page */
 .game-placeholder {
@@ -227,6 +228,38 @@ a { color: #44aa88; }
 #game-hud select:focus { outline: none; }
 #game-hud input[type=range] { height: 4px; cursor: pointer; }
 #game-hud label { color: #888; font-size: 12px; }
+
+/* Buttons */
+.btn-primary {
+  background: #2a5a4a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-primary:hover { background: #3a7a5a; }
+
+.btn-danger {
+  background: #5a2a2a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-danger:hover { background: #7a3a3a; }
+.btn-danger:disabled { opacity: 0.4; cursor: default; }
+
+/* Material Creator */
+#mc-layout { min-height: 400px; }
+#mc-preview { min-height: 300px; }
+#mc-preview canvas { display: block; width: 100% !important; height: 100% !important; }
+.mc-list-item:hover { background: #2a2a2a; }
 
 /* Responsive */
 @media (max-width: 600px) {
