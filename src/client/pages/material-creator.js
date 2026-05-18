@@ -2,6 +2,7 @@ import { initPreview } from '../components/material-preview.js'
 
 let preview = null
 let currentId = null
+let textureCache = []
 
 const DEFAULTS = {
   name: '',
@@ -107,15 +108,22 @@ function loadTextureList() {
   fetch('/api/resources/textures')
     .then(r => r.json())
     .then(list => {
-      const sel = document.getElementById('mc-texture')
-      const norm = document.getElementById('mc-normalmap')
-      if (!sel && !norm) return
-      const opts = list.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')
-      const none = '<option value="">— Sin textura —</option>'
-      if (sel) sel.innerHTML = none + opts
-      if (norm) norm.innerHTML = none + opts
+      textureCache = list
+      populateTextureSelectors()
     })
     .catch(() => {})
+}
+
+function populateTextureSelectors() {
+  const sel = document.getElementById('mc-texture')
+  const norm = document.getElementById('mc-normalmap')
+  if (!sel && !norm) return
+  const opts = textureCache.map(t =>
+    `<option value="${t.id}">${escapeHtml(t.name)}</option>`
+  ).join('')
+  const none = '<option value="">— Sin textura —</option>'
+  if (sel) sel.innerHTML = none + opts
+  if (norm) norm.innerHTML = none + opts
 }
 
 function renderProps(m) {
@@ -251,6 +259,8 @@ function renderProps(m) {
       if (confirm('¿Eliminar este material?')) deleteMaterial(currentId)
     })
   }
+
+  populateTextureSelectors()
 }
 
 function updatePreview() {
@@ -376,4 +386,5 @@ export function cleanupMaterialCreator() {
     preview = null
   }
   currentId = null
+  textureCache = []
 }
