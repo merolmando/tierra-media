@@ -10,6 +10,7 @@ import { renderTexturePainter, cleanupTexturePainter } from './pages/texture-pai
 import { renderVoxelModeler, cleanupVoxelModeler } from './pages/voxel-modeler.js'
 import { renderHudEditor, cleanupHudEditor } from './pages/hud-editor.js'
 import { renderInputMapper, cleanupInputMapper } from './pages/input-mapper.js'
+import { renderWorldGenerator, cleanupWorldGenerator } from './pages/world-generator.js'
 
 renderNavbar()
 
@@ -23,6 +24,7 @@ const router = new Router({
   '/dev/voxel-modeler': renderVoxelModeler,
   '/dev/hud-editor': renderHudEditor,
   '/dev/input-mapper': renderInputMapper,
+  '/dev/world-generator': renderWorldGenerator,
 }, renderDocs)
 
 router.onBeforeChange(() => {
@@ -44,6 +46,9 @@ router.onBeforeChange(() => {
   }
   if (hash !== 'dev/input-mapper' && hash !== '/dev/input-mapper') {
     cleanupInputMapper()
+  }
+  if (hash !== 'dev/world-generator' && hash !== '/dev/world-generator') {
+    cleanupWorldGenerator()
   }
 })
 

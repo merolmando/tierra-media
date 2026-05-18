@@ -54,6 +54,7 @@ const labels = {
   'voxel-modeler': 'Voxel Modeler',
   'hud-editor': 'HUD Editor',
   'input-mapper': 'Input Mapper',
+  'world-generator': 'World Generator',
   studio: 'Studio',
 }
 

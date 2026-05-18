@@ -5,6 +5,7 @@ const tools = [
   { name: 'HUD Editor', desc: 'Editor de HUDs con botones, bars y elementos de UI', route: '/dev/hud-editor', status: 'ready' },
   { name: 'Input Mapper', desc: 'Mapeo de teclas y botones para acciones del juego', route: '/dev/input-mapper', status: 'ready' },
   { name: 'Studio', desc: 'Editor de mapas 3D para colocar modelos en el mundo', route: null, status: 'pending' },
+  { name: 'World Generator', desc: 'Generación procedural de mundos con capas macro/zona/mapa', route: '/dev/world-generator', status: 'ready' },
 ]
 
 export function renderDev() {

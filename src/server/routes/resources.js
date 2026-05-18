@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto'
 const router = Router()
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, '../../../data')
-const VALID_TYPES = ['materials', 'textures', 'models', 'maps', 'huds', 'inputMaps']
+const VALID_TYPES = ['materials', 'textures', 'models', 'maps', 'huds', 'inputMaps', 'worlds', 'structures']
 
 function typePath(type) {
   return join(DATA_DIR, type)
