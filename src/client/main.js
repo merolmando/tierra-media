@@ -1,0 +1,25 @@
+import { Router } from './router.js'
+import { renderNavbar } from './components/navbar.js'
+import { renderHome } from './pages/home.js'
+import { renderDevlog } from './pages/devlog.js'
+import { renderGame, cleanupGame } from './pages/game.js'
+import { renderDev } from './pages/dev.js'
+import { renderDocs } from './pages/docs.js'
+
+renderNavbar()
+
+const router = new Router({
+  '/': renderHome,
+  '/devlog': renderDevlog,
+  '/game': renderGame,
+  '/dev': renderDev,
+}, renderDocs)
+
+router.onBeforeChange(() => {
+  const hash = location.hash.slice(1)
+  if (hash !== 'game' && hash !== '/game') {
+    cleanupGame()
+  }
+})
+
+router.init()

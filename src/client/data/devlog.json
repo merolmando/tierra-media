@@ -1,0 +1,14 @@
+[
+  {
+    "date": "2026-05-19",
+    "title": "Hito 0 — Estructura del proyecto",
+    "entries": [
+      "Inicializado proyecto con package.json, Express 5, Vite 8 y Three.js",
+      "Creada estructura src/server, src/client, src/shared con rutas separadas",
+      "Servidor Express con ruta /api/health funcionando en puerto 3000",
+      "Frontend con Vite + Three.js: escena 3D con luz, grid y cubo rotando",
+      "Configuración de scripts dev (servidor + HMR), build y start",
+      "Creada estructura de documentación docs/ con 4 categorías base"
+    ]
+  }
+]
