@@ -261,6 +261,16 @@ a { color: #44aa88; }
 #mc-preview canvas { display: block; width: 100% !important; height: 100% !important; }
 .mc-list-item:hover { background: #2a2a2a; }
 
+/* Texture Painter */
+#tp-canvas-container { min-height: 300px; }
+#tp-canvas-container canvas { display: block; }
+.tp-tool-btn { transition: background 0.15s, border-color 0.15s; }
+.tp-tool-btn:hover { border-color: #44aa88; }
+.tp-tool-active { background: #2a4a3a !important; border-color: #44aa88 !important; color: #fff !important; }
+.tp-layer-btn { transition: background 0.15s, border-color 0.15s; }
+.tp-layer-btn:hover { border-color: #44aa88; }
+.tp-layer-active { background: #2a4a3a !important; border-color: #44aa88 !important; color: #fff !important; }
+
 /* Responsive */
 @media (max-width: 600px) {
   nav { flex-wrap: wrap; }

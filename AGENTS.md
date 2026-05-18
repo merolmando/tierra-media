@@ -20,7 +20,7 @@
 | 6 | **Studio** | `maps/*.json` | Models, Materials, HUDs |
 | 7 | **Game** (runtime) | — | Maps, HUDs, Input Maps |
 
-## Fase actual — Texture Painter (herramienta #2, próxima)
+## Fase actual — Texture Painter (herramienta #2)
 
 ### Schema de Material (`materials/*.json`)
 ```json

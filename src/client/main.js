@@ -6,6 +6,7 @@ import { renderGame, cleanupGame } from './pages/game.js'
 import { renderDev } from './pages/dev.js'
 import { renderDocs } from './pages/docs.js'
 import { renderMaterialCreator, cleanupMaterialCreator } from './pages/material-creator.js'
+import { renderTexturePainter, cleanupTexturePainter } from './pages/texture-painter.js'
 
 renderNavbar()
 
@@ -15,6 +16,7 @@ const router = new Router({
   '/game': renderGame,
   '/dev': renderDev,
   '/dev/material-creator': renderMaterialCreator,
+  '/dev/texture-painter': renderTexturePainter,
 }, renderDocs)
 
 router.onBeforeChange(() => {
@@ -24,6 +26,9 @@ router.onBeforeChange(() => {
   }
   if (hash !== 'dev/material-creator' && hash !== '/dev/material-creator') {
     cleanupMaterialCreator()
+  }
+  if (hash !== 'dev/texture-painter' && hash !== '/dev/texture-painter') {
+    cleanupTexturePainter()
   }
 })
 
