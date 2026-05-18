@@ -181,7 +181,7 @@ Sistema modular: el tipo de cuerpo determina qué animaciones y ataques tiene di
 
 | Herramienta | Propósito |
 |---|---|
-| **Blender (modelador voxel)** | Modelado 3D voxel para crear objetos, edificios, props |
+| **Voxel Modeler** | Modelado 3D voxel para crear objetos, edificios, props |
 | **Material Creator** | Crear materiales PBR (colores, texturas, propiedades mecánicas) |
 | **Texture Painter** | Editar texturas atlas y normal maps usando materiales como pinceles |
 | **Studio** | Editor de mapas 3D: colocar modelos en el mundo |

@@ -1,5 +1,5 @@
 const tools = [
-  { name: 'Blender (modelador voxel)', desc: 'Modelado 3D voxel para crear objetos, edificios y props' },
+  { name: 'Voxel Modeler', desc: 'Modelado 3D voxel para crear objetos, edificios y props' },
   { name: 'Material Creator', desc: 'Crear materiales PBR con colores, texturas y propiedades mecánicas' },
   { name: 'Texture Painter', desc: 'Editar texturas atlas y normal maps usando materiales como pinceles' },
   { name: 'Studio', desc: 'Editor de mapas 3D para colocar modelos en el mundo' },

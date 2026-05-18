@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync, mkdirSync } from 'fs'
 import { join, extname, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 import healthRouter from './routes/health.js'
+import resourcesRouter from './routes/resources.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -14,8 +15,9 @@ const DATA_DIR = join(__dirname, '../../data')
 const DATA_TYPES = ['materials', 'textures', 'models', 'maps']
 DATA_TYPES.forEach(t => mkdirSync(join(DATA_DIR, t), { recursive: true }))
 
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
 app.use('/api/health', healthRouter)
+app.use('/api/resources', resourcesRouter)
 
 app.get('/api/devlog', (req, res) => {
   try {
