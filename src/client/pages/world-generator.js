@@ -12,6 +12,15 @@ let biomeCache = {}
 let previewCanvas = null
 let previewCtx = null
 let show3d = false
+let touring = false
+let fullMapView = false
+let fullCanvas = null
+let fullZoom = 1
+let fullPanX = 0
+let fullPanY = 0
+let fullDragging = false
+let fullDragStartX = 0
+let fullDragStartY = 0
 let scene3d = null
 let camera3d = null
 let renderer3d = null
@@ -20,12 +29,12 @@ let animFrame = null
 let container3d = null
 
 const DEFAULT_REGLAS = {
-  macro: { noise: 'perlin', scale: 100, octaves: 4, amplitude: 1, persistence: 0.5 },
-  zona: { noise: 'perlin', scale: 40, octaves: 3, amplitude: 1, persistence: 0.5, tempBase: 0.5, humedadBase: 0.5 },
+  macro: { distorsionFrecuencia: 0.3, distorsionMagnitud: 20, cotaMar: 0.45, transicionCosta: 0.1, detalleRuido: 30, detalleOctaves: 4, placas: 4, tectFuerza: 0.5, tectElevacion: 0.3, tectSubsidencia: 0.2, vientoEscala: 1, alturaInflTemp: 0.3 },
+  zona: { detalleEscala: 20, detalleOctaves: 3, detalleAmp: 0.3, varTemp: 0.2, eoEolica: 0.3, eoHidrica: 0.3 },
   mapa: { noise: 'perlin', scale: 15, octaves: 3, amplitude: 10, persistence: 0.5, mar: 0 },
 }
 
-const DEFAULT_TILES = { macro: [8, 8], zona: [4, 4], mapa: [2, 2] }
+const DEFAULT_TILES = { macro: 8, zona: 4, mapa: 2 }
 const DEFAULT_ALTURA = { abajo: 3, arriba: 3 }
 
 // --- Perlin noise ---
@@ -81,28 +90,284 @@ function generateMacro(world, reglas) {
   const noise = new Perlin(world.seed)
   const [cols, rows] = world.tiles.macro
   const heights = []
+  let minH = Infinity, maxH = -Infinity
   for (let y = 0; y < rows; y++) {
     heights[y] = []
     for (let x = 0; x < cols; x++) {
-      heights[y][x] = noise.fbm(x, y, reglas.octaves, reglas.scale, reglas.amplitude, reglas.persistence)
+      const wFreq = reglas.distorsionFrecuencia ?? 0.3
+      const warpX = noise.fbm(x * wFreq, y * wFreq, 3, 1, 1, 0.5)
+      const warpY = noise.fbm(x * wFreq + 100, y * wFreq + 100, 3, 1, 1, 0.5)
+      const wx = x + warpX * (reglas.distorsionMagnitud ?? 20)
+      const wy = y + warpY * (reglas.distorsionMagnitud ?? 20)
+      const cont = noise.fbm(wx * 0.05, wy * 0.05, 3, 1, 1, 0.5)
+      const sig = 1 / (1 + Math.exp(-(cont - (reglas.cotaMar ?? 0.45)) / (reglas.transicionCosta ?? 0.1)))
+      const mask = Math.max(0, Math.min(1, sig))
+      const detail = noise.fbm(wx, wy, reglas.detalleOctaves, reglas.detalleRuido, 1, 0.5) * Math.max(0, mask - 0.45) * 4
+      let h = (mask - 0.5) * 2 + detail
+      heights[y][x] = h
+      if (h < minH) minH = h
+      if (h > maxH) maxH = h
     }
   }
-  return heights
+
+  // --- Tectonic faults: N random points → nearest-neighbor graph → uplift/subsidence ---
+  const nPoints = Math.max(2, reglas.placas || 4)
+  const faultNoise = new Perlin(world.seed + 777)
+  const pts = []
+  for (let i = 0; i < nPoints; i++) {
+    pts.push({
+      x: (faultNoise.noise2D(i * 100.7 + 33.3, 42.7) * 0.5 + 0.5) * (cols - 1),
+      y: (faultNoise.noise2D(77.3, i * 100.7 + 33.3) * 0.5 + 0.5) * (rows - 1),
+    })
+  }
+  // Connect each point to its nearest neighbor (no duplicates)
+  const edges = []
+  const seen = new Set()
+  for (let i = 0; i < nPoints; i++) {
+    let minD = Infinity, nj = -1
+    for (let j = 0; j < nPoints; j++) {
+      if (j === i) continue
+      const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y
+      const d = dx * dx + dy * dy
+      if (d < minD) { minD = d; nj = j }
+    }
+    if (nj < 0) continue
+    const key = Math.min(i, nj) + '-' + Math.max(i, nj)
+    if (!seen.has(key)) {
+      seen.add(key)
+      const sign = faultNoise.noise2D(i * 50.7 + nj * 23.3, nj * 50.7 + i * 23.3) > 0 ? 1 : -1
+      edges.push({ i, j: nj, sign })
+    }
+  }
+  // Build fault segments from edges
+  const faultSegments = []
+  for (const e of edges) {
+    const a = pts[e.i], b = pts[e.j]
+    const angle = Math.atan2(b.y - a.y, b.x - a.x)
+    const upAngle = angle + Math.PI / 2
+    const strength = 0.3 + Math.abs(faultNoise.noise2D(e.i * 10.7, e.j * 10.7)) * 0.7
+    faultSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, upAngle, upSide: e.sign, strength })
+  }
+  // Apply uplift/subsidence along fault lines
+  const fRadius = 4
+  const tectForce = reglas.tectFuerza ?? 0.5
+  const tectUp = reglas.tectElevacion ?? 0.3
+  const tectDown = reglas.tectSubsidencia ?? 0.2
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      let totalUplift = 0
+      for (const f of faultSegments) {
+        const dx = f.x2 - f.x1, dy = f.y2 - f.y1
+        const lenSq = dx * dx + dy * dy || 1
+        let t = ((x - f.x1) * dx + (y - f.y1) * dy) / lenSq
+        t = Math.max(0, Math.min(1, t))
+        const px = f.x1 + t * dx, py = f.y1 + t * dy
+        const dist = Math.sqrt((x - px) ** 2 + (y - py) ** 2)
+        if (dist < fRadius) {
+          const cross = (x - f.x1) * dy - (y - f.y1) * dx
+          const side = cross > 0 ? 1 : -1
+          const falloff = 1 - dist / fRadius
+          if (side === f.upSide) {
+            totalUplift += tectUp * tectForce * falloff * f.strength
+          } else {
+            totalUplift -= tectDown * tectForce * falloff * f.strength
+          }
+        }
+      }
+      heights[y][x] += totalUplift * 0.3
+    }
+  }
+  let range = maxH - minH || 1
+  const midY = (rows - 1) / 2
+
+  // --- Temperature: latFactor = 0 at poles, 1 at equator, modulated by height ---
+  const temps = []
+  for (let y = 0; y < rows; y++) {
+    temps[y] = []
+    for (let x = 0; x < cols; x++) {
+      const latFactor = 1 - Math.abs(y - midY) / midY
+      const hNorm = (heights[y][x] - minH) / range
+      const isOcean = heights[y][x] < 0
+      const depthFactor = isOcean ? Math.min(1, -heights[y][x] / 0.5) * 0.3 : 0
+      let temp = latFactor - hNorm * (reglas.alturaInflTemp ?? 0.3) - depthFactor
+      temps[y][x] = Math.max(0, Math.min(1, temp))
+    }
+  }
+
+  // --- Pressure (inverse of temperature) ---
+  const pressure = []
+  for (let y = 0; y < rows; y++) {
+    pressure[y] = []
+    for (let x = 0; x < cols; x++) {
+      pressure[y][x] = Math.max(0, Math.min(1, 1 - temps[y][x]))
+    }
+  }
+
+  // --- Wind (pressure gradient + Coriolis + terrain influence) ---
+  const windU = [], windV = [], windStrength = []
+  for (let y = 0; y < rows; y++) {
+    windU[y] = []; windV[y] = []; windStrength[y] = []
+    for (let x = 0; x < cols; x++) {
+      const px0 = x > 0 ? pressure[y][x - 1] : pressure[y][x]
+      const px1 = x < cols - 1 ? pressure[y][x + 1] : pressure[y][x]
+      const py0 = y > 0 ? pressure[y - 1][x] : pressure[y][x]
+      const py1 = y < rows - 1 ? pressure[y + 1][x] : pressure[y][x]
+      let du = -(px1 - px0) * 0.5 * (reglas.vientoEscala ?? 1)
+      let dv = -(py1 - py0) * 0.5 * (reglas.vientoEscala ?? 1)
+      const latNorm = (y / rows - 0.5) * 2
+      const coriolis = latNorm * 0.3
+      const du2 = du - dv * coriolis
+      const dv2 = dv + du * coriolis
+      windU[y][x] = du2
+      windV[y][x] = dv2
+      // Terrain influence: wind accelerates over ridges, decelerates in valleys
+      const hSlope = y > 0 ? Math.abs(heights[y][x] - heights[y - 1][x]) : 0
+      const vSlope = x > 0 ? Math.abs(heights[y][x] - heights[y][x - 1]) : 0
+      const slopeFactor = 1 + (hSlope + vSlope) * 2
+      windStrength[y][x] = Math.min(1, Math.sqrt(du2 * du2 + dv2 * dv2) * slopeFactor)
+    }
+  }
+
+  // Final min/max
+  minH = Infinity; maxH = -Infinity
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const h = heights[y][x]
+      if (h < minH) minH = h
+      if (h > maxH) maxH = h
+    }
+  }
+  range = maxH - minH || 1
+
+  // Final temp recompute
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const latFactor = 1 - Math.abs(y - midY) / midY
+      const hNorm = (heights[y][x] - minH) / range
+      const isOcean = heights[y][x] < 0
+      const depthFactor = isOcean ? Math.min(1, -heights[y][x] / 0.5) * 0.3 : 0
+      let temp = latFactor - hNorm * (reglas.alturaInflTemp ?? 0.3) - depthFactor
+      temps[y][x] = Math.max(0, Math.min(1, temp))
+    }
+  }
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      pressure[y][x] = Math.max(0, Math.min(1, 1 - temps[y][x]))
+    }
+  }
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const px0 = x > 0 ? pressure[y][x - 1] : pressure[y][x]
+      const px1 = x < cols - 1 ? pressure[y][x + 1] : pressure[y][x]
+      const py0 = y > 0 ? pressure[y - 1][x] : pressure[y][x]
+      const py1 = y < rows - 1 ? pressure[y + 1][x] : pressure[y][x]
+      let du = -(px1 - px0) * 0.5 * (reglas.vientoEscala ?? 1)
+      let dv = -(py1 - py0) * 0.5 * (reglas.vientoEscala ?? 1)
+      const latNorm = (y / rows - 0.5) * 2
+      const coriolis = latNorm * 0.3
+      windU[y][x] = du - dv * coriolis; windV[y][x] = dv + du * coriolis
+      const hSlope = y > 0 ? Math.abs(heights[y][x] - heights[y - 1][x]) : 0
+      const vSlope = x > 0 ? Math.abs(heights[y][x] - heights[y][x - 1]) : 0
+      windStrength[y][x] = Math.min(1, Math.sqrt(windU[y][x] ** 2 + windV[y][x] ** 2) * (1 + (hSlope + vSlope) * 2))
+    }
+  }
+
+  return { heights, temps, minH, maxH, pressure, windU, windV, windStrength, faultSegments }
 }
 
-function generateZona(world, macroX, macroY, reglas) {
+function sampleGrid(grid, cols, rows, wx, wy) {
+  const x = Math.max(0, Math.min(cols - 1, wx))
+  const y = Math.max(0, Math.min(rows - 1, wy))
+  const x0 = Math.max(0, Math.min(cols - 1, Math.floor(x)))
+  const x1 = Math.max(0, Math.min(cols - 1, Math.ceil(x)))
+  const y0 = Math.max(0, Math.min(rows - 1, Math.floor(y)))
+  const y1 = Math.max(0, Math.min(rows - 1, Math.ceil(y)))
+  const fx = x - Math.floor(x)
+  const fy = y - Math.floor(y)
+  const h00 = grid[y0][x0]
+  const h10 = grid[y0][x1]
+  const h01 = grid[y1][x0]
+  const h11 = grid[y1][x1]
+  const h0 = h00 + (h10 - h00) * fx
+  const h1 = h01 + (h11 - h01) * fx
+  return h0 + (h1 - h0) * fy
+}
+
+function generateZona(world, macroX, macroY, reglas, macroData) {
   const noise = new Perlin(world.seed + macroX * 1000 + macroY)
   const [cols, rows] = world.tiles.zona
+  const [mc, mr] = world.tiles.macro
   const heights = [], temps = [], hums = []
   for (let y = 0; y < rows; y++) {
     heights[y] = []; temps[y] = []; hums[y] = []
     for (let x = 0; x < cols; x++) {
       const gx = macroX * cols + x, gy = macroY * rows + y
-      heights[y][x] = noise.fbm(gx, gy, reglas.octaves, reglas.scale, reglas.amplitude, reglas.persistence)
-      temps[y][x] = noise.fbm(gx + 500, gy + 500, 2, 50, 1, 0.5) * 0.5 + reglas.tempBase
-      hums[y][x] = noise.fbm(gx + 1000, gy + 1000, 2, 50, 1, 0.5) * 0.5 + reglas.humedadBase
+      // Fractional position within the macro tile [macroX, macroX+1] × [macroY, macroY+1]
+      const fx = (x + 0.5) / cols
+      const fy = (y + 0.5) / rows
+      const wx = macroX + fx
+      const wy = macroY + fy
+      const baseH = sampleGrid(macroData.heights, mc, mr, wx, wy)
+      const baseT = sampleGrid(macroData.temps, mc, mr, wx, wy)
+      const baseP = sampleGrid(macroData.pressure, mc, mr, wx, wy)
+      const detail = noise.fbm(gx, gy, reglas.detalleOctaves ?? 3, reglas.detalleEscala ?? 20, 1, 0.5)
+      const detAmp = reglas.detalleAmp ?? 0.3
+      const umbral = detAmp * 0.5
+      const factorLineal = baseH < 0 ? Math.max(0, Math.min(1, 1 + baseH / umbral)) : 1
+      const factorTierra = factorLineal * factorLineal
+      heights[y][x] = baseH + detail * detAmp * factorTierra
+      const tempVar = noise.fbm(gx + 500, gy + 500, 2, 30, 1, 0.5) * (reglas.varTemp ?? 0.2)
+      temps[y][x] = Math.max(0, Math.min(1, baseT + tempVar))
+      const humNoise = noise.fbm(gx + 1000, gy + 1000, 2, 30, 1, 0.5) * 0.3
+      hums[y][x] = Math.max(0, Math.min(1, (1 - baseP) * 0.5 + humNoise))
     }
   }
+
+  // --- Local wind from micro temp gradient (for erosion) ---
+  const windStr = []
+  for (let y = 0; y < rows; y++) {
+    windStr[y] = []
+    for (let x = 0; x < cols; x++) {
+      const px0 = x > 0 ? temps[y][x - 1] : temps[y][x]
+      const px1 = x < cols - 1 ? temps[y][x + 1] : temps[y][x]
+      const py0 = y > 0 ? temps[y - 1][x] : temps[y][x]
+      const py1 = y < rows - 1 ? temps[y + 1][x] : temps[y][x]
+      windStr[y][x] = Math.min(1, Math.sqrt((px1 - px0) ** 2 + (py1 - py0) ** 2) * 3)
+    }
+  }
+
+  // --- Erosion ---
+  const eoEolica = reglas.eoEolica ?? 0.3
+  const eoHidrica = reglas.eoHidrica ?? 0.3
+  for (let iter = 0; iter < 2; iter++) {
+    for (let y = 1; y < rows - 1; y++) {
+      for (let x = 1; x < cols - 1; x++) {
+        const h = heights[y][x]
+        if (eoEolica > 0 && windStr[y][x] > 0.3) {
+          heights[y][x] -= windStr[y][x] * eoEolica * 0.04
+        }
+        if (eoHidrica > 0) {
+          const rain = temps[y][x] * (1 - temps[y][x]) * 4
+          if (rain > 0.2) {
+            let minN = Infinity, minX = x, minY = y
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue
+                const nh = heights[y + dy]?.[x + dx]
+                if (nh !== undefined && nh < minN) { minN = nh; minX = x + dx; minY = y + dy }
+              }
+            }
+            if (minN < h) {
+              const transfer = (h - minN) * rain * eoHidrica * 0.1
+              heights[y][x] -= transfer
+              heights[minY][minX] += transfer * 0.8
+            }
+          }
+        }
+      }
+    }
+  }
+
   return { heights, temps, hums }
 }
 
@@ -141,11 +406,64 @@ function generateBlocks(world, macroX, macroY, zonaX, zonaY, mapaX, mapaY, regla
 }
 
 // --- Rendering ---
-function heatColor(v) {
-  const t = Math.max(0, Math.min(1, (v + 1) / 2))
-  const r = Math.round(Math.min(255, t * 510))
-  const g = Math.round(Math.min(255, 510 - t * 510))
-  return `rgb(${r},${g},80)`
+function tempColor(t, alpha) {
+  const v = Math.max(0, Math.min(1, t))
+  const r = Math.round(v * 255)
+  const b = Math.round((1 - v) * 255)
+  if (alpha !== undefined) return `rgba(${r},40,${b},${alpha})`
+  return `rgb(${r},40,${b})`
+}
+
+function depthColor(h, minH, maxH) {
+  const range = maxH - minH || 1
+  const t = (h - minH) / range // 0..1
+  // Warm→Cold: low = cálido, high = frío (a más altura más frío)
+  const stops = [
+    [0.00, 15, 15, 60],    // deep ocean
+    [0.15, 25, 45, 120],   // ocean
+    [0.30, 30, 90, 170],   // shallow
+    [0.42, 60, 140, 190],  // coast
+    [0.48, 190, 180, 110], // beach / arena cálida
+    [0.52, 120, 170, 60],  // lowland
+    [0.60, 140, 150, 50],  // grassland
+    [0.75, 150, 120, 70],  // hills (menos cálido)
+    [0.88, 90, 100, 140],  // mountains fríos
+    [1.00, 180, 200, 240], // nieve — azul frío
+  ]
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, r0, g0, b0] = stops[i]
+    const [t1, r1, g1, b1] = stops[i + 1]
+    if (t >= t0 && t <= t1) {
+      const f = (t - t0) / (t1 - t0)
+      const r = Math.round(r0 + (r1 - r0) * f)
+      const g = Math.round(g0 + (g1 - g0) * f)
+      const b = Math.round(b0 + (b1 - b0) * f)
+      return `rgb(${r},${g},${b})`
+    }
+  }
+  return 'rgb(220,220,230)'
+}
+
+function heightGray(h, minH, maxH) {
+  const range = maxH - minH || 1
+  const t = (h - minH) / range
+  const stops = [
+    [0.00, 0, 0, 0],
+    [0.20, 50, 50, 50],
+    [0.40, 100, 100, 100],
+    [0.60, 155, 155, 155],
+    [0.80, 210, 210, 210],
+    [1.00, 255, 255, 255],
+  ]
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, r0, g0, b0] = stops[i]
+    const [t1, r1, g1, b1] = stops[i + 1]
+    if (t >= t0 && t <= t1) {
+      const f = (t - t0) / (t1 - t0)
+      return `rgb(${Math.round(r0 + (r1 - r0) * f)},${Math.round(g0 + (g1 - g0) * f)},${Math.round(b0 + (b1 - b0) * f)})`
+    }
+  }
+  return 'rgb(255,255,255)'
 }
 
 function biomeColor(temp, hum) {
@@ -156,8 +474,27 @@ function biomeColor(temp, hum) {
   return '#80b040'
 }
 
+function pressureColor(v, alpha) {
+  const t = Math.max(0, Math.min(1, v))
+  const g = Math.round(220 - t * 120)
+  const r = Math.round(60 + t * 195)
+  const b = Math.round(60 + t * 195)
+  if (alpha !== undefined) return `rgba(${r},${g},${b},${alpha})`
+  return `rgb(${r},${g},${b})`
+}
+
+function windColor(v, alpha) {
+  const t = Math.max(0, Math.min(1, v))
+  const g = Math.round(200 - t * 100)
+  const r = Math.round(50 + t * 205)
+  const b = Math.round(50 + t * 205)
+  if (alpha !== undefined) return `rgba(${r},${g},${b},${alpha})`
+  return `rgb(${r},${g},${b})`
+}
+
 function render2D() {
   if (!previewCtx || !worldData) return
+  if (fullMapView) return
   const ctx = previewCtx
   const canvas = previewCanvas
   const container = canvas.parentElement
@@ -168,27 +505,74 @@ function render2D() {
 
   const reglas = worldData.reglas
   const activeLayer = layerStack.length > 0 ? layerStack[layerStack.length - 1] : 'macro'
+  const showHeat = document.getElementById('wg-show-heat')?.checked !== false
+  const showDepth = document.getElementById('wg-show-depth')?.checked !== false
+  const showWind = document.getElementById('wg-show-wind')?.checked !== false
+  const showPressure = document.getElementById('wg-show-pressure')?.checked !== false
+  const showTec = document.getElementById('wg-show-tec')?.checked !== false
 
   if (activeLayer === 'macro') {
-    const hData = generateMacro(worldData, reglas.macro)
+    const data = generateMacro(worldData, reglas.macro)
     const [cols, rows] = worldData.tiles.macro
     const cw = w / cols, ch = h / rows
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        ctx.fillStyle = heatColor(hData[y][x])
+        if (showDepth) {
+          ctx.fillStyle = heightGray(data.heights[y][x], data.minH, data.maxH)
+        } else {
+          ctx.fillStyle = '#1a1a1a'
+        }
         ctx.fillRect(x * cw, y * ch, cw, ch)
+
+        // Overlays with alpha
+        if (showHeat) {
+          ctx.fillStyle = tempColor(data.temps[y][x], 0.2)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showPressure) {
+          ctx.fillStyle = pressureColor(data.pressure[y][x], 0.2)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showWind) {
+          ctx.fillStyle = windColor(data.windStrength[y][x], 0.2)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
         if (selMacro && selMacro[0] === x && selMacro[1] === y) {
           ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3; ctx.strokeRect(x * cw, y * ch, cw, ch)
         }
       }
     }
+    // Draw fault lines overlay
+    if (showTec && data.faultSegments) {
+      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(255,180,80,0.7)'
+      ctx.beginPath()
+      for (const f of data.faultSegments) {
+        ctx.moveTo(f.x1 * cw, f.y1 * ch)
+        ctx.lineTo(f.x2 * cw, f.y2 * ch)
+      }
+      ctx.stroke()
+      // Up-side markers
+      for (const f of data.faultSegments) {
+        const mx = (f.x1 + f.x2) / 2 * cw, my = (f.y1 + f.y2) / 2 * ch
+        ctx.fillStyle = f.upSide > 0 ? 'rgba(255,100,100,0.5)' : 'rgba(100,100,255,0.5)'
+        ctx.beginPath()
+        ctx.arc(mx + Math.cos(f.upAngle) * 10, my + Math.sin(f.upAngle) * 10, 4, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
   } else if (activeLayer === 'zona' && selMacro) {
-    const zData = generateZona(worldData, selMacro[0], selMacro[1], reglas.zona)
+    const macroData = generateMacro(worldData, reglas.macro)
+    const zData = generateZona(worldData, selMacro[0], selMacro[1], reglas.zona, macroData)
     const [cols, rows] = worldData.tiles.zona
     const cw = w / cols, ch = h / rows
+    const { minH, maxH } = macroData
+    const zRange = maxH - minH || 1
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        ctx.fillStyle = biomeColor(zData.temps[y][x], zData.hums[y][x])
+        const t = (zData.heights[y][x] - minH) / zRange
+        const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
+        ctx.fillStyle = `rgb(${gray},${gray},${gray})`
         ctx.fillRect(x * cw, y * ch, cw, ch)
         if (selZona && selZona[0] === x && selZona[1] === y) {
           ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3; ctx.strokeRect(x * cw, y * ch, cw, ch)
@@ -199,10 +583,33 @@ function render2D() {
     const mData = generateMapa(worldData, selMacro[0], selMacro[1], selZona[0], selZona[1], reglas.mapa)
     const [cols, rows] = worldData.tiles.mapa
     const cw = w / cols, ch = h / rows
+    // Compute temps from height for mapa (higher = colder)
+    let mMin = Infinity, mMax = -Infinity
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const h = mData[y][x]
+      if (h < mMin) mMin = h; if (h > mMax) mMax = h
+    }
+    const mRange = mMax - mMin || 1
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        ctx.fillStyle = heatColor(mData[y][x] / 10)
-        ctx.fillRect(x * cw, y * ch, cw, ch)
+        const h = mData[y][x]
+        if (showDepth && showHeat) {
+          ctx.fillStyle = heightGray(h, -reglas.mapa.amplitude, reglas.mapa.amplitude)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+          const t = 1 - (h - mMin) / mRange
+          ctx.fillStyle = tempColor(Math.max(0, Math.min(1, t)), 0.45)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        } else if (showDepth) {
+          ctx.fillStyle = heightGray(h, -reglas.mapa.amplitude, reglas.mapa.amplitude)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        } else if (showHeat) {
+          const t = 1 - (h - mMin) / mRange
+          ctx.fillStyle = tempColor(Math.max(0, Math.min(1, t)))
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        } else {
+          ctx.fillStyle = heightGray(h, -reglas.mapa.amplitude, reglas.mapa.amplitude)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
         if (selMapa && selMapa[0] === x && selMapa[1] === y) {
           ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3; ctx.strokeRect(x * cw, y * ch, cw, ch)
         }
@@ -218,9 +625,10 @@ function drawMiniMap(ctx, w, h) {
   const [zc, zr] = worldData.tiles.zona
   const cw = w / (mc * zc), ch = h / (mr * zr)
   if (cw < 2 || ch < 2) return
+  const macroData = generateMacro(worldData, reglas.macro)
   for (let my = 0; my < mr; my++) {
     for (let mx = 0; mx < mc; mx++) {
-      const zData = generateZona(worldData, mx, my, reglas.zona)
+      const zData = generateZona(worldData, mx, my, reglas.zona, macroData)
       for (let zy = 0; zy < zr; zy++) {
         for (let zx = 0; zx < zc; zx++) {
           const t = zData.temps[zy]?.[zx] ?? 0.5
@@ -326,7 +734,7 @@ function onCanvasClick(e) {
     if (x >= 0 && x < cols && y >= 0 && y < rows) {
       selMacro = [x, y]; selZona = null; selMapa = null
       layerStack.push('zona')
-      render2D(); renderLayerNav()
+      render2D(); renderLayerNav(); renderReglas()
     }
   } else if (activeLayer === 'zona' && selMacro) {
     const [cols, rows] = worldData.tiles.zona
@@ -335,7 +743,7 @@ function onCanvasClick(e) {
     if (x >= 0 && x < cols && y >= 0 && y < rows) {
       selZona = [x, y]; selMapa = null
       layerStack.push('mapa')
-      render2D(); renderLayerNav()
+      render2D(); renderLayerNav(); renderReglas()
     }
   } else if (activeLayer === 'mapa' && selMacro && selZona) {
     const [cols, rows] = worldData.tiles.mapa
@@ -351,21 +759,35 @@ function onCanvasClick(e) {
 
 function renderLayerNav() {
   const el = document.getElementById('wg-layers')
-  if (!el) return
-  const parts = []
-  parts.push(`<a href="#" data-layer="" style="color:#44aa88;text-decoration:none">Macro ${worldData?.tiles?.macro?.join('×') || ''}</a>`)
-  if (selMacro) parts.push(` > <a href="#" data-layer="zona" style="color:#44aa88;text-decoration:none">Zona ${selMacro[0]},${selMacro[1]}</a>`)
-  if (selZona) parts.push(` > <a href="#" data-layer="mapa" style="color:#44aa88;text-decoration:none">Mapa ${selZona[0]},${selZona[1]}</a>`)
-  if (selMapa) parts.push(` > <span style="color:#aaa">Tile ${selMapa[0]},${selMapa[1]}</span>`)
-  el.innerHTML = parts.join('')
-  el.querySelectorAll('a').forEach(a => {
-    a.addEventListener('click', e => {
-      e.preventDefault()
-      const l = a.dataset.layer
-      if (l === '') { layerStack = ['macro']; selMacro = null; selZona = null; selMapa = null }
-      else if (l === 'zona') { layerStack = ['macro', 'zona']; selZona = null; selMapa = null }
-      else if (l === 'mapa') { layerStack = ['macro', 'zona', 'mapa']; selMapa = null }
-      render2D(); renderLayerNav()
+  if (!el || !worldData) return
+
+  const cl = (name, active, onClick) =>
+    `<div class="wg-layer-btn${active ? ' active' : ''}" data-layer="${onClick}" style="padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:2px;${active ? 'background:#2a4a3a;color:#fff;font-weight:600' : 'color:#aaa'}"
+       onmouseenter="this.style.background='${active ? '#2a4a3a' : '#2a2a2a'}'" onmouseleave="this.style.background='${active ? '#2a4a3a' : 'transparent'}'">${name.charAt(0).toUpperCase() + name.slice(1)}</div>`
+
+  const layer = layerStack.length > 0 ? layerStack[layerStack.length - 1] : 'macro'
+  const t = worldData.tiles
+  const isMacro = layer === 'macro'
+  const isZona = layer === 'zona'
+  const isMapa = layer === 'mapa'
+
+  let html = '<div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">CAPAS</div>'
+  html += cl(`Macro (${t.macro[0]}×${t.macro[1]})`, isMacro, 'macro')
+  if (selMacro || isZona || isMapa) {
+    html += '<div style="padding-left:16px">' + cl(`Zona (${t.zona[0]}×${t.zona[1]})`, isZona, 'zona') + '</div>'
+  }
+  if (selZona || isMapa) {
+    html += '<div style="padding-left:32px">' + cl(`Mapa (${t.mapa[0]}×${t.mapa[1]})`, isMapa, 'mapa') + '</div>'
+  }
+
+  el.innerHTML = html
+  el.querySelectorAll('.wg-layer-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = btn.dataset.layer
+      if (l === 'macro') { layerStack = ['macro']; selMacro = null; selZona = null; selMapa = null }
+      else if (l === 'zona') { if (!selMacro) selMacro = [0, 0]; layerStack = ['macro', 'zona']; selZona = null; selMapa = null }
+      else if (l === 'mapa') { if (!selMacro) selMacro = [0, 0]; if (!selZona) selZona = [0, 0]; layerStack = ['macro', 'zona', 'mapa']; selMapa = null }
+      render2D(); renderLayerNav(); renderReglas()
     })
   })
 }
@@ -377,51 +799,109 @@ function renderReglas() {
   const r = worldData.reglas[activeLayer] || {}
 
   const fields = activeLayer === 'macro' ? `
-    <label>Tipo ruido</label>
-    <select id="wg-noise"><option value="perlin"${r.noise === 'perlin' ? ' selected' : ''}>Perlin</option></select>
-    <label>Scale</label><input id="wg-scale" type="number" step="1" value="${r.scale || 100}" style="width:100%">
-    <label>Octaves</label><input id="wg-octaves" type="number" step="1" min="1" max="10" value="${r.octaves || 4}" style="width:100%">
-    <label>Amplitud</label><input id="wg-amp" type="number" step="0.1" value="${r.amplitude || 1}" style="width:100%">
-    <label>Persistencia</label><input id="wg-persist" type="number" step="0.05" min="0" max="1" value="${r.persistence || 0.5}" style="width:100%">
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">DISTORSIÓN</div>
+    <div class="wg-label">Frecuencia</div><input id="wg-distFrec" type="number" step="0.05" min="0.05" max="2" value="${r.distorsionFrecuencia ?? 0.3}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Magnitud</div><input id="wg-distMag" type="number" step="1" min="0" max="100" value="${r.distorsionMagnitud ?? 20}" style="width:100%;margin-bottom:6px">
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">CONTINENTES</div>
+    <div class="wg-label">Cota del mar</div><input id="wg-cotaMar" type="number" step="0.01" min="0" max="1" value="${r.cotaMar ?? 0.45}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Transición costa</div><input id="wg-transCosta" type="number" step="0.01" min="0.01" max="0.5" value="${r.transicionCosta ?? 0.1}" style="width:100%;margin-bottom:6px">
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">DETALLE</div>
+    <div class="wg-label">Ruido detalle</div><input id="wg-detRuido" type="number" step="1" min="1" max="200" value="${r.detalleRuido ?? 30}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Octaves detalle</div><input id="wg-detOct" type="number" step="1" min="1" max="10" value="${r.detalleOctaves ?? 4}" style="width:100%;margin-bottom:6px">
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">TECTÓNICA</div>
+    <div class="wg-label">Puntos de falla (1–10)</div><input id="wg-placas" type="number" step="1" min="1" max="10" value="${r.placas ?? 4}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Fuerza tectónica</div><input id="wg-tectF" type="number" step="0.05" min="0" max="2" value="${r.tectFuerza ?? 0.5}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Elevación bordes</div><input id="wg-tectUp" type="number" step="0.05" min="0" max="1" value="${r.tectElevacion ?? 0.3}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Subsidencia bordes</div><input id="wg-tectDown" type="number" step="0.05" min="0" max="1" value="${r.tectSubsidencia ?? 0.2}" style="width:100%;margin-bottom:6px">
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">CLIMA / VIENTO</div>
+    <div class="wg-label">Escala viento</div><input id="wg-vientoEsc" type="number" step="0.1" min="0" max="5" value="${r.vientoEscala ?? 1}" style="width:100%;margin-bottom:6px">
+    <div style="font-size:11px;color:#666;margin-top:4px">El viento se acelera en crestas y se frena en valles.</div>
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">TEMPERATURA</div>
+    <div class="wg-label">Enfriamiento por altura</div>
+    <input id="wg-altTemp" type="range" min="0" max="1" step="0.05" value="${r.alturaInflTemp ?? 0.3}" style="width:100%;margin-bottom:2px">
+    <div id="wg-altTemp-val" style="font-size:11px;color:#888;margin-bottom:6px">${(r.alturaInflTemp ?? 0.3).toFixed(2)}</div>
+    <div style="font-size:11px;color:#666;margin-top:4px">Norte = 0, Centro = 1, Sur = 0. La altura enfría.</div>
   ` : activeLayer === 'zona' ? `
-    <label>Tipo ruido</label>
-    <select id="wg-noise"><option value="perlin">Perlin</option></select>
-    <label>Scale</label><input id="wg-scale" type="number" step="1" value="${r.scale || 40}" style="width:100%">
-    <label>Octaves</label><input id="wg-octaves" type="number" step="1" min="1" max="10" value="${r.octaves || 3}" style="width:100%">
-    <label>Amplitud</label><input id="wg-amp" type="number" step="0.1" value="${r.amplitude || 1}" style="width:100%">
-    <label>Persistencia</label><input id="wg-persist" type="number" step="0.05" min="0" max="1" value="${r.persistence || 0.5}" style="width:100%">
-    <label>Temp. base</label><input id="wg-temp" type="number" step="0.05" min="0" max="1" value="${r.tempBase ?? 0.5}" style="width:100%">
-    <label>Humedad base</label><input id="wg-hum" type="number" step="0.05" min="0" max="1" value="${r.humedadBase ?? 0.5}" style="width:100%">
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">DETALLE SOBRE BASE MACRO</div>
+    <div class="wg-label">Escala detalle</div>
+    <input id="wg-znEsc" type="number" step="1" value="${r.detalleEscala || 20}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Octavas detalle</div>
+    <input id="wg-znOct" type="number" step="1" min="1" max="10" value="${r.detalleOctaves || 3}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Amplitud detalle</div>
+    <input id="wg-znAmp" type="number" step="0.05" value="${r.detalleAmp || 0.3}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Variación temp.</div>
+    <input id="wg-znVarTemp" type="number" step="0.05" min="0" max="1" value="${r.varTemp ?? 0.2}" style="width:100%;margin-bottom:6px">
+    <div style="font-size:11px;color:#666;margin-top:4px">La altura, temperatura y humedad heredan del macro tile.</div>
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">EROSIÓN</div>
+    <div class="wg-label">Eólica (0–1)</div><input id="wg-znEoEolica" type="number" step="0.05" min="0" max="1" value="${r.eoEolica ?? 0.3}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Hídrica (0–1)</div><input id="wg-znEoHidrica" type="number" step="0.05" min="0" max="1" value="${r.eoHidrica ?? 0.3}" style="width:100%;margin-bottom:6px">
   ` : `
-    <label>Tipo ruido</label>
-    <select id="wg-noise"><option value="perlin">Perlin</option></select>
-    <label>Scale</label><input id="wg-scale" type="number" step="1" value="${r.scale || 15}" style="width:100%">
-    <label>Octaves</label><input id="wg-octaves" type="number" step="1" min="1" max="10" value="${r.octaves || 3}" style="width:100%">
-    <label>Amplitud</label><input id="wg-amp" type="number" step="0.1" value="${r.amplitude || 10}" style="width:100%">
-    <label>Persistencia</label><input id="wg-persist" type="number" step="0.05" min="0" max="1" value="${r.persistence || 0.5}" style="width:100%">
-    <label>Nivel del mar</label><input id="wg-mar" type="number" step="1" value="${r.mar ?? 0}" style="width:100%">
+    <div class="wg-label">Tipo ruido</div>
+    <select id="wg-noise" style="width:100%;margin-bottom:8px"><option value="perlin">Perlin</option></select>
+    <div class="wg-label">Scale</div><input id="wg-scale" type="number" step="1" value="${r.scale || 15}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Octaves</div><input id="wg-octaves" type="number" step="1" min="1" max="10" value="${r.octaves || 3}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Amplitud</div><input id="wg-amp" type="number" step="0.1" value="${r.amplitude || 10}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Persistencia</div><input id="wg-persist" type="number" step="0.05" min="0" max="1" value="${r.persistence || 0.5}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Nivel del mar</div><input id="wg-mar" type="number" step="1" value="${r.mar ?? 0}" style="width:100%;margin-bottom:6px">
   `
 
   el.innerHTML = `
-    <div class="tool-section-title">REGLAS — ${activeLayer.toUpperCase()}</div>
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:10px">REGLAS — ${activeLayer.toUpperCase()}</div>
     ${fields}
-    <hr>
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
     <button id="wg-generate" class="btn-primary" style="width:100%">Generar</button>
   `
 
   const saveRegla = () => {
     const r2 = worldData.reglas[activeLayer]
     const g = id => document.getElementById(id)
-    if (g('wg-scale')) r2.scale = parseFloat(g('wg-scale').value) || 1
-    if (g('wg-octaves')) r2.octaves = parseInt(g('wg-octaves').value) || 1
-    if (g('wg-amp')) r2.amplitude = parseFloat(g('wg-amp').value) || 0.1
-    if (g('wg-persist')) r2.persistence = parseFloat(g('wg-persist').value) || 0.5
-    if (g('wg-temp')) r2.tempBase = parseFloat(g('wg-temp').value) || 0.5
-    if (g('wg-hum')) r2.humedadBase = parseFloat(g('wg-hum').value) || 0.5
     if (g('wg-mar')) r2.mar = parseFloat(g('wg-mar').value) || 0
+    if (g('wg-altTemp')) {
+      r2.alturaInflTemp = parseFloat(g('wg-altTemp').value) || 0
+      const l = document.getElementById('wg-altTemp-val')
+      if (l) l.textContent = r2.alturaInflTemp.toFixed(2)
+    }
+    if (g('wg-distFrec')) r2.distorsionFrecuencia = parseFloat(g('wg-distFrec').value) || 0.05
+    if (g('wg-distMag')) r2.distorsionMagnitud = parseFloat(g('wg-distMag').value) || 0
+    if (g('wg-cotaMar')) r2.cotaMar = parseFloat(g('wg-cotaMar').value) || 0
+    if (g('wg-transCosta')) r2.transicionCosta = parseFloat(g('wg-transCosta').value) || 0.01
+    if (g('wg-detRuido')) r2.detalleRuido = parseFloat(g('wg-detRuido').value) || 1
+    if (g('wg-detOct')) r2.detalleOctaves = parseInt(g('wg-detOct').value) || 1
+    if (g('wg-placas')) r2.placas = parseInt(g('wg-placas').value) || 1
+    if (g('wg-tectF')) r2.tectFuerza = parseFloat(g('wg-tectF').value) || 0
+    if (g('wg-tectUp')) r2.tectElevacion = parseFloat(g('wg-tectUp').value) || 0
+    if (g('wg-tectDown')) r2.tectSubsidencia = parseFloat(g('wg-tectDown').value) || 0
+    if (g('wg-vientoEsc')) r2.vientoEscala = parseFloat(g('wg-vientoEsc').value) || 0.1
+    if (g('wg-znEsc')) r2.detalleEscala = parseFloat(g('wg-znEsc').value) || 1
+    if (g('wg-znOct')) r2.detalleOctaves = parseInt(g('wg-znOct').value) || 1
+    if (g('wg-znAmp')) r2.detalleAmp = parseFloat(g('wg-znAmp').value) || 0.05
+    if (g('wg-znVarTemp')) r2.varTemp = parseFloat(g('wg-znVarTemp').value) || 0
+    if (g('wg-znEoEolica')) r2.eoEolica = parseFloat(g('wg-znEoEolica').value) || 0
+    if (g('wg-znEoHidrica')) r2.eoHidrica = parseFloat(g('wg-znEoHidrica').value) || 0
   }
 
-  el.querySelectorAll('input, select').forEach(inp => inp.addEventListener('input', saveRegla))
+  el.querySelectorAll('input, select').forEach(inp => inp.addEventListener('input', () => {
+    saveRegla()
+    render2D()
+  }))
   document.getElementById('wg-generate')?.addEventListener('click', () => {
     saveRegla()
     render2D()
@@ -431,11 +911,12 @@ function renderReglas() {
 
 function newWorld() {
   currentId = null
+  const n = v => [v, v]
   worldData = {
     id: uuid(),
     name: '',
     seed: Math.floor(Math.random() * 2147483647),
-    tiles: { ...DEFAULT_TILES, macro: [...DEFAULT_TILES.macro], zona: [...DEFAULT_TILES.zona], mapa: [...DEFAULT_TILES.mapa], mapaBlk: 8 },
+    tiles: { macro: n(DEFAULT_TILES.macro), zona: n(DEFAULT_TILES.zona), mapa: n(DEFAULT_TILES.mapa), mapaBlk: 8 },
     altura: { ...DEFAULT_ALTURA },
     reglas: { macro: { ...DEFAULT_REGLAS.macro }, zona: { ...DEFAULT_REGLAS.zona }, mapa: { ...DEFAULT_REGLAS.mapa } },
     deltas: {},
@@ -443,6 +924,12 @@ function newWorld() {
   }
   layerStack = ['macro']; selMacro = null; selZona = null; selMapa = null
   document.getElementById('wg-name').value = ''
+  document.getElementById('wg-seed').value = worldData.seed
+  const setNum = (id, v) => { const el = document.getElementById(id); if (el) el.value = v }
+  setNum('wg-msize', DEFAULT_TILES.macro)
+  setNum('wg-zsize', DEFAULT_TILES.zona)
+  setNum('wg-mpsize', DEFAULT_TILES.mapa)
+  setNum('wg-abajo', worldData.altura.abajo); setNum('wg-arriba', worldData.altura.arriba)
   render2D(); renderLayerNav(); renderReglas()
 }
 
@@ -470,6 +957,12 @@ function loadWorld(id) {
     currentId = data.id; worldData = data
     layerStack = ['macro']; selMacro = null; selZona = null; selMapa = null
     document.getElementById('wg-name').value = data.name || ''
+    document.getElementById('wg-seed').value = data.seed || 0
+    const setNum = (id, v) => { const el = document.getElementById(id); if (el) el.value = v }
+    setNum('wg-msize', data.tiles.macro[0])
+    setNum('wg-zsize', data.tiles.zona[0])
+    setNum('wg-mpsize', data.tiles.mapa[0])
+    setNum('wg-abajo', data.altura.abajo); setNum('wg-arriba', data.altura.arriba)
     renderWorldList(); render2D(); renderLayerNav(); renderReglas()
   }).catch(() => alert('Error al cargar mundo'))
 }
@@ -492,41 +985,168 @@ function saveWorld() {
     .catch(() => alert('Error al guardar'))
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+async function startTour() {
+  if (!worldData) return
+  touring = true
+  const btn = document.getElementById('wg-tour')
+  if (btn) btn.textContent = '■ Detener'
+  const reglas = worldData.reglas
+  const macroData = generateMacro(worldData, reglas.macro)
+  const [mc, mr] = worldData.tiles.macro
+  const [zc, zr] = worldData.tiles.zona
+
+  for (let my = 0; my < mr && touring; my++) {
+    for (let mx = 0; mx < mc && touring; mx++) {
+      selMacro = [mx, my]; selZona = null; selMapa = null
+      layerStack = ['macro']
+      render2D(); renderLayerNav()
+      await sleep(500)
+      if (!touring) break
+
+      for (let zy = 0; zy < zr && touring; zy++) {
+        for (let zx = 0; zx < zc && touring; zx++) {
+          selZona = [zx, zy]; selMapa = null
+          layerStack = ['macro', 'zona']
+          render2D(); renderLayerNav()
+          await sleep(500)
+          if (!touring) break
+
+          selMapa = [0, 0]
+          layerStack = ['macro', 'zona', 'mapa']
+          render2D(); renderLayerNav()
+          await sleep(500)
+          if (!touring) break
+        }
+      }
+    }
+  }
+
+  touring = false
+  if (btn) btn.textContent = '▶ Recorrer'
+}
+
+function renderFullMap() {
+  if (!worldData) return
+  const reglas = worldData.reglas
+  const macroData = generateMacro(worldData, reglas.macro)
+  const { minH, maxH } = macroData
+  const zRange = maxH - minH || 1
+  const [mc, mr] = worldData.tiles.macro
+  const [zc, zr] = worldData.tiles.zona
+  const px = 8
+  fullCanvas = document.createElement('canvas')
+  fullCanvas.width = mc * zc * px
+  fullCanvas.height = mr * zr * px
+  const ctx = fullCanvas.getContext('2d')
+
+  for (let my = 0; my < mr; my++) {
+    for (let mx = 0; mx < mc; mx++) {
+      const zData = generateZona(worldData, mx, my, reglas.zona, macroData)
+      for (let zy = 0; zy < zr; zy++) {
+        for (let zx = 0; zx < zc; zx++) {
+          const t = (zData.heights[zy][zx] - minH) / zRange
+          const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
+          ctx.fillStyle = `rgb(${gray},${gray},${gray})`
+          ctx.fillRect((mx * zc + zx) * px, (my * zr + zy) * px, px, px)
+        }
+      }
+    }
+  }
+
+  fullZoom = 1; fullPanX = 0; fullPanY = 0
+  drawFullMap()
+}
+
+function drawFullMap() {
+  const canvas = previewCanvas
+  const container = canvas.parentElement
+  const w = container.clientWidth - 4, h = container.clientHeight - 4
+  canvas.width = w; canvas.height = h
+  const ctx = previewCtx
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, w, h)
+  if (!fullCanvas) return
+  ctx.save()
+  ctx.translate(fullPanX, fullPanY)
+  ctx.scale(fullZoom, fullZoom)
+  ctx.drawImage(fullCanvas, 0, 0)
+  ctx.restore()
+}
+
 export function renderWorldGenerator() {
   const app = document.getElementById('app')
   app.innerHTML = `
     <div class="tool-header">
       <h1>World Generator</h1>
-      <div id="wg-layers" style="font-size:13px;color:#888"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="wg-save" class="btn-primary">Guardar</button>
+        <button id="wg-new" style="padding:5px 12px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:13px">+ Nuevo</button>
+        <button id="wg-tour" style="padding:5px 12px;border-radius:6px;border:1px solid #2a6;background:#1a3a2a;color:#4c8;cursor:pointer;font-size:13px">▶ Recorrer</button>
+        <button id="wg-fullmap" style="padding:5px 12px;border-radius:6px;border:1px solid #48a;background:#1a2a3a;color:#6af;cursor:pointer;font-size:13px">🗺 Vista completa</button>
+      </div>
     </div>
-    <div class="tool-layout" style="grid-template-columns:200px 1fr 240px">
-      <div class="tool-panel">
-        <div style="display:flex;gap:4px;margin-bottom:8px">
-          <input id="wg-name" type="text" placeholder="Nombre del mundo" style="flex:1;background:#222;color:#ddd;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:13px">
-          <button id="wg-new" style="padding:5px 10px;border-radius:4px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:13px">+</button>
+    <div class="tool-layout" style="grid-template-columns:220px 1fr 240px">
+      <div class="tool-panel" style="font-size:12px">
+        <div id="wg-list" style="margin-bottom:8px;max-height:110px;overflow-y:auto"></div>
+
+        <div class="wg-label">Nombre</div>
+        <input id="wg-name" type="text" placeholder="Nombre del mundo" value="" style="width:100%;margin-bottom:6px">
+
+        <div class="wg-label">Seed</div>
+        <input id="wg-seed" type="number" step="1" value="0" style="width:100%;margin-bottom:6px">
+
+        <div id="wg-layers"></div>
+
+        <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+        <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">LIENZOS</div>
+
+        <div class="wg-label">Macro</div>
+        <input id="wg-msize" type="number" step="1" min="1" value="8" style="width:100%;margin-bottom:5px">
+
+        <div class="wg-label">Zona</div>
+        <input id="wg-zsize" type="number" step="1" min="1" value="4" style="width:100%;margin-bottom:5px">
+
+        <div class="wg-label">Mapa</div>
+        <input id="wg-mpsize" type="number" step="1" min="1" value="2" style="width:100%;margin-bottom:5px">
+
+        <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+        <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">ALTURA (chunks)</div>
+        <div style="display:flex;gap:4px">
+          <div style="flex:1">
+            <div class="wg-label">Abajo</div>
+            <input id="wg-abajo" type="number" step="1" min="0" value="3" style="width:100%">
+          </div>
+          <div style="flex:1">
+            <div class="wg-label">Arriba</div>
+            <input id="wg-arriba" type="number" step="1" min="0" value="3" style="width:100%">
+          </div>
         </div>
-        <button id="wg-save" class="btn-primary" style="width:100%;margin-bottom:8px">Guardar</button>
-        <div id="wg-list" style="margin-bottom:8px"></div>
-        <hr style="border:none;border-top:1px solid #2a2a2a;margin:12px 0">
-        <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">CONFIG</div>
-        <label>Seed</label>
-        <input id="wg-seed" type="number" step="1" style="width:100%">
-        <label>Tiles Macro</label>
-        <div style="display:flex;gap:4px"><input id="wg-mc" type="number" step="1" min="1" value="8" style="flex:1"><input id="wg-mr" type="number" step="1" min="1" value="8" style="flex:1"></div>
-        <label>Tiles Zona</label>
-        <div style="display:flex;gap:4px"><input id="wg-zc" type="number" step="1" min="1" value="4" style="flex:1"><input id="wg-zr" type="number" step="1" min="1" value="4" style="flex:1"></div>
-        <label>Tiles Mapa</label>
-        <div style="display:flex;gap:4px"><input id="wg-mpc" type="number" step="1" min="1" value="2" style="flex:1"><input id="wg-mpr" type="number" step="1" min="1" value="2" style="flex:1"></div>
-        <label>Altura abajo (chunks)</label>
-        <input id="wg-abajo" type="number" step="1" min="0" value="3" style="width:100%">
-        <label>Altura arriba (chunks)</label>
-        <input id="wg-arriba" type="number" step="1" min="0" value="3" style="width:100%">
       </div>
       <div class="tool-viewport" id="wg-viewport" style="overflow:hidden;position:relative">
         <canvas id="wg-canvas" style="display:block;cursor:pointer"></canvas>
         <div id="wg-canvas3d" style="display:none;width:100%;height:100%"></div>
         <div style="position:absolute;top:8px;right:8px;z-index:10">
           <button id="wg-toggle3d" style="padding:4px 10px;border-radius:4px;border:1px solid #444;background:rgba(0,0,0,0.7);color:#ddd;cursor:pointer;font-size:11px">3D</button>
+        </div>
+        <div id="wg-viz-bar" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.75);padding:5px 10px;z-index:10;display:flex;gap:10px;font-size:11px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#ddd">
+            <input type="checkbox" id="wg-show-depth" checked> <span>🗻 Profundidad</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#f88">
+            <input type="checkbox" id="wg-show-heat" checked> <span>🌡 Calor</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#ad6">
+            <input type="checkbox" id="wg-show-pressure"> <span>🔄 Presión</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#ad6">
+            <input type="checkbox" id="wg-show-wind"> <span>🌬 Viento</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#88f">
+            <input type="checkbox" id="wg-show-tec"> <span>🌋 Tectónica</span>
+          </label>
         </div>
       </div>
       <div class="tool-props" id="wg-reglas" style="overflow-y:auto;font-size:12px">
@@ -545,29 +1165,74 @@ export function renderWorldGenerator() {
 
   document.getElementById('wg-toggle3d').addEventListener('click', toggle3D)
 
-  const configInputs = ['wg-seed', 'wg-mc', 'wg-mr', 'wg-zc', 'wg-zr', 'wg-mpc', 'wg-mpr', 'wg-abajo', 'wg-arriba']
+  document.getElementById('wg-tour').addEventListener('click', () => {
+    if (touring) { touring = false; document.getElementById('wg-tour').textContent = '▶ Recorrer'; return }
+    startTour()
+  })
+  document.getElementById('wg-fullmap').addEventListener('click', () => {
+    fullMapView = !fullMapView
+    const btn = document.getElementById('wg-fullmap')
+    if (fullMapView) {
+      btn.textContent = '◀ Volver'
+      renderFullMap()
+    } else {
+      btn.textContent = '🗺 Vista completa'
+      fullCanvas = null
+      fullZoom = 1; fullPanX = 0; fullPanY = 0
+      render2D()
+    }
+  })
+
+  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      if (fullMapView) { drawFullMap(); return }
+      render2D()
+    })
+  })
+
+  previewCanvas.addEventListener('wheel', e => {
+    if (!fullMapView || !fullCanvas) return
+    e.preventDefault()
+    const z = e.deltaY > 0 ? 0.9 : 1.1
+    fullZoom = Math.max(1, Math.min(20, fullZoom * z))
+    drawFullMap()
+  })
+
+  previewCanvas.addEventListener('mousedown', e => {
+    if (!fullMapView || fullZoom <= 1) return
+    fullDragging = true
+    fullDragStartX = e.clientX - fullPanX
+    fullDragStartY = e.clientY - fullPanY
+  })
+  window.addEventListener('mousemove', e => {
+    if (!fullDragging) return
+    fullPanX = e.clientX - fullDragStartX
+    fullPanY = e.clientY - fullDragStartY
+    drawFullMap()
+  })
+  window.addEventListener('mouseup', () => { fullDragging = false })
+
+  const configInputs = ['wg-seed', 'wg-msize', 'wg-zsize', 'wg-mpsize', 'wg-abajo', 'wg-arriba']
   const applyConfig = () => {
     if (!worldData) return
+    const n = v => Math.max(1, parseInt(v) || 1)
     worldData.seed = parseInt(document.getElementById('wg-seed').value) || 0
-    worldData.tiles.macro = [parseInt(document.getElementById('wg-mc').value) || 8, parseInt(document.getElementById('wg-mr').value) || 8]
-    worldData.tiles.zona = [parseInt(document.getElementById('wg-zc').value) || 4, parseInt(document.getElementById('wg-zr').value) || 4]
-    worldData.tiles.mapa = [parseInt(document.getElementById('wg-mpc').value) || 2, parseInt(document.getElementById('wg-mpr').value) || 2]
-    worldData.altura.abajo = parseInt(document.getElementById('wg-abajo').value) || 3
-    worldData.altura.arriba = parseInt(document.getElementById('wg-arriba').value) || 3
+    const ms = n(document.getElementById('wg-msize').value)
+    const zs = n(document.getElementById('wg-zsize').value)
+    const mps = n(document.getElementById('wg-mpsize').value)
+    worldData.tiles.macro = [ms, ms]
+    worldData.tiles.zona = [zs, zs]
+    worldData.tiles.mapa = [mps, mps]
+    worldData.altura.abajo = n(document.getElementById('wg-abajo').value)
+    worldData.altura.arriba = n(document.getElementById('wg-arriba').value)
   }
-  configInputs.forEach(id => document.getElementById(id).addEventListener('input', applyConfig))
+  configInputs.forEach(id => document.getElementById(id).addEventListener('input', () => {
+    applyConfig()
+    render2D()
+  }))
 
   newWorld()
   renderWorldList()
-
-  const updateSeedDisp = () => {
-    if (worldData) document.getElementById('wg-seed').value = worldData.seed
-  }
-  updateSeedDisp()
-  const seedObs = setInterval(() => {
-    if (worldData) document.getElementById('wg-seed').value = worldData.seed
-  }, 100)
-  setTimeout(() => clearInterval(seedObs), 500)
 }
 
 export function cleanupWorldGenerator() {

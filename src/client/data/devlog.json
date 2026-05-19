@@ -77,5 +77,28 @@
       "Defaults: WASD + controles típicos con un botón",
       "Conexiones entre herramientas completadas"
     ]
+  },
+  {
+    "date": "2026-05-20",
+    "title": "Hito 5 — World Generator completado",
+    "entries": [
+      "Macro redefinido: domain warping (Distorsión), máscara continental sigmoide (Continentes), detalle solo en tierra firme",
+      "Sistema climático macro: temperatura (latFactor norte=0 centro=1 sur=0, modulado por altura+profundidad), presión (inversa de temp), viento (gradiente presión + Coriolis + slopeFactor del terreno)",
+      "Tectónica de fallas: N puntos aleatorios con offset fraccional (i*100.7+33.3), conexión nearest-neighbor, segmentos con signo (mitad sube/baja), radio 4 con desvanecimiento",
+      "5 overlays en macro: profundidad (grises), calor (rojo-azul), presión (azul-rojo), viento (verde-rojo), tectónica (fallas con marcadores de elevación/subsidencia) — alpha 0.2 combinables",
+      "Zona hereda datos macro mediante sampleGrid() con interpolación bilineal del vecindario 3×3 del macro",
+      "factorTierra cuadrático en zona: evita ruido detalle creando tierra en océano (umbral = detalleAmp * 0.5)",
+      "Erosión movida de macro a zona: eólica (viento local > 0.3 desgasta) + hídrica (lluvia en temp media transporta sedimento cuesta abajo, 2 iteraciones)",
+      "Zona render simplificado a solo mapa de altura en escala de grises (usando minH/maxH global del macro)",
+      "sampleGrid(): función auxiliar de interpolación bilineal 2D con clamping en bordes",
+      "Tour automático (startTour): recorre macro→todas las zonas→mapa(0,0) a 500ms/paso, botón toggle con cancelación",
+      "Vista completa (renderFullMap + drawFullMap): off-screen canvas 8px/celda, zoom con rueda (1–20×), drag paneo, botón toggle",
+      "Panel izquierdo rediseñado: nombre, seed, tamaño lienzos (un solo valor para w=h), altura chunks, capas como botones estilizados",
+      "Reglas rediseñadas por secciones: Distorsión, Continentes, Detalle, Tectónica, Clima/Viento, Temperatura (macro); Detalle sobre Base Macro, Erosión (zona)",
+      "Viz bar inferior con 5 checkboxes para overlays combinables en tiempo real",
+      "Bugfix: tectónica generaba puntos en el centro por noise2D en lattice points enteros (corregido con offsets fraccionales)",
+      "Bugfix: renderReglas() no se llamaba al navegar por click en canvas entre capas",
+      "Bugfix: océanos generaban demasiadas islas por ruido detalle sin atenuación (factorTierra cuadrático)"
+    ]
   }
 ]

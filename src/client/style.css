@@ -349,3 +349,9 @@ a { color: #44aa88; }
 .he-el-item { user-select: none; }
 .he-hud-item { user-select: none; }
 
+#wg-layers { margin-bottom: 8px; }
+#wg-layers .wg-layer-btn { transition: background 0.15s; }
+#wg-list { margin-bottom: 8px; }
+#wg-list .wg-list-item { user-select: none; }
+.wg-label { font-size: 11px; color: #888; margin-bottom: 2px; }
+
