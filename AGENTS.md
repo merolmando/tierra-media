@@ -143,11 +143,54 @@ La Capa 1 alimenta el skybox del engine:
 
 Toma datos de Capa 1 por tile continental + vecindario 3×3. Refina relieve, clima local, biomas. No puede modificar la continental.
 
-## Capa 3 — Local (borrador conceptual)
+## Capa 3 — Local (especificación completa)
 
-*— Pendiente de diseñar —*
+### Concepto
 
-Genera terreno 3D con bloques voxel a partir de datos de Capa 2. Representación jugable.
+La Capa 3 genera el terreno local detallado a partir de los datos de Capa 2 (zData). Subdivide cada tile de zona en una cuadrícula `mapa×mapa` (default 8×8) y produce un campo de alturas continuo con micro-detalle Perlin, coloreado por bioma para visualización 3D. No puede modificar la regional.
+
+### Herencia
+
+Cada celda local (x, y) se calcula desde zData mediante `sampleGrid2D`:
+
+| Matriz | Herencia |
+|---|---|
+| `heights[y][x]` | `sampleGrid2D(zData.h, nx, ny) + microPerlin × 0.08`, clamped 0..1 |
+| `temps[y][x]` | `sampleGrid2D(zData.temp, nx, ny)` |
+| `hums[y][x]` | `sampleGrid2D(zData.hum, nx, ny)` |
+| `floras[y][x]` | `sampleGrid2D(zData.flora, nx, ny)` |
+| `rios[y][x]` | `sampleGrid2D(zData.rios, nx, ny)` |
+
+Coordenadas normalizadas: `nx = (zonaX * cols + x + 0.5) / (zCols * cols)`
+
+### Bloques 3D
+
+`generateBlocks()` produce bloques coloreados para visualización con `InstancedMesh`:
+
+1. Por cada celda local (z, x), computa altura de superficie `surfY = round(h * voxH)`
+2. Agua (`h < 0.5`): azul oscuro uniforme
+3. Superficie (`surfY - y < 1`): verde según flora, atenuado por temperatura
+4. Ríos (`rio > 0.3 && surfY - y < 1`): azul medio
+5. Subsuelo (`surfY - y < 4`): marrón degradado
+6. Roca profunda: gris progresivo según profundidad
+
+Límite: 30k instancias máximo. `mapa = 8` → 8×8 = 64 celdas con ~50 bloques cada una ≈ 3200 bloques.
+
+### Output 2D — Overlays en vista mapa
+
+| Overlay | Origen | Descripción |
+|---|---|---|
+| `showDepth` | `lData.heights` | `depthColor()` con altura normalizada, océano = `h × 0.44` |
+| `showHeat` | `lData.temps` | `tempColor()` alpha 0.3 |
+| `showHum` | `lData.hums` | `humColor()` alpha 0.25 |
+| `showRain` | `lData.rios` | `rioColor()` alpha 0.3 |
+| `showBiome` | `lData.temps + hums` | `biomeColor()` alpha 0.4 |
+
+### Parámetros
+
+Los parámetros de la Capa 3 son los tiles `mapa` y `mapaBlk` del mundo:
+- `world.tiles.mapa[0]` (default 8): resolución del lienzo local
+- `world.tiles.mapaBlk` (default 8): subdivisión de bloques (no usado directamente por generateLocal, que usa mapa como resolución directa)
 
 ---
 
@@ -168,14 +211,14 @@ El generador debe permitir:
 
 | Etapa | Descripción | Estado |
 |---|---|---|
-| 1 | Motor climático: 3 matrices base + presión/viento/humedad/lluvia | Pendiente |
-| 2 | Ciclo solar: reloj 25min→24h, hora según X, skybox output | Pendiente |
-| 3 | Ciclo estaciones: 4 estaciones, inclinación, modificación clima | Pendiente |
-| 4 | Erosión hidráulica: aplicación anual, efecto mínimo sobre H | Pendiente |
-| 5 | Modo simulación en World Generator: controles de tiempo, aceleración | Pendiente |
-| 6 | Skybox: 12 texturas, mezcla por shader, transición fluida | Pendiente |
-| 7 | Capa 2 — Regional (posterior) | Pendiente |
-| 8 | Capa 3 — Local (posterior) | Pendiente |
+| 1 | Motor climático: 3 matrices base + presión/viento/humedad/lluvia | ✅ Completo |
+| 2 | Ciclo solar: reloj 25min→24h, hora según X, skybox output | ✅ Completo |
+| 3 | Ciclo estaciones: 4 estaciones, inclinación, modificación clima | ✅ Completo |
+| 4 | Erosión hidráulica: aplicación anual, efecto mínimo sobre H | ✅ Completo |
+| 5 | Modo simulación en World Generator: controles de tiempo, aceleración | ✅ Completo |
+| 6 | Skybox: 12 texturas, mezcla por shader, transición fluida | ⬜ Pendiente |
+| 7 | Capa 2 — Regional | ✅ Completo |
+| 8 | Capa 3 — Local | ✅ Completo |
 
 ---
 

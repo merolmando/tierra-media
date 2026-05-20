@@ -156,5 +156,18 @@
       "Overlays compartidos con macro: 🏔 🌡 💧 🌬 ☔ 🧱 + nuevo 🌿 Bioma",
       "Bioma usa biomeColor(temp, hum) con alpha 0.4 sobre altura en grises"
     ]
+  },
+  {
+    "date": "2026-05-21",
+    "title": "Capa 3 — Local completa",
+    "entries": [
+      "generateLocal: hereda de zData (h, temp, hum, flora, rios) vía sampleGrid2D normalizado",
+      "Micro-detalle Perlin × 0.08 sobre altura base de zona",
+      "generateBlocks produce bloques coloreados para InstancedMesh: agua, superficie verde, ríos, subsuelo marrón, roca gris",
+      "3D coloreado por bioma: verde según flora × temp, azul agua/océano/rios",
+      "Overlays en mapa 2D: 🏔 depthColor (océano ×0.44), 🌡 temp, 💧 hum, ☔ rain, 🌿 bioma",
+      "Default mapa tiles subido de 2→8 para resolución local",
+      "Máximo 30k instancias 3D (mapa=8 → ~3200 bloques típico)"
+    ]
   }
 ]

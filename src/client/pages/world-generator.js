@@ -38,7 +38,7 @@ const DEFAULT_REGLAS = {
   mapa: { noise: 'perlin', scale: 15, octaves: 3, amplitude: 10, persistence: 0.5, mar: 0 },
 }
 
-const DEFAULT_TILES = { macro: 8, zona: 4, mapa: 2 }
+const DEFAULT_TILES = { macro: 8, zona: 4, mapa: 8 }
 const DEFAULT_ALTURA = { abajo: 3, arriba: 3 }
 
 // --- Perlin noise ---
@@ -329,6 +329,18 @@ function sampleGrid(grid, cols, rows, wx, wy) {
   return h0 + (h1 - h0) * fy
 }
 
+function sampleGrid2D(grid, nx, ny) {
+  const rows = grid.length, cols = grid[0].length
+  const x = nx * (cols - 1), y = ny * (rows - 1)
+  const x0 = Math.max(0, Math.min(cols - 1, Math.floor(x)))
+  const x1 = Math.max(0, Math.min(cols - 1, Math.ceil(x)))
+  const y0 = Math.max(0, Math.min(rows - 1, Math.floor(y)))
+  const y1 = Math.max(0, Math.min(rows - 1, Math.ceil(y)))
+  const fx = x - Math.floor(x), fy = y - Math.floor(y)
+  const h00 = grid[y0][x0], h10 = grid[y0][x1], h01 = grid[y1][x0], h11 = grid[y1][x1]
+  return h00 + (h10 - h00) * fx + ((h01 + (h11 - h01) * fx) - (h00 + (h10 - h00) * fx)) * fy
+}
+
 function generateZona(world, macroX, macroY, reglas, macroData) {
   const noise = new Perlin(world.seed + macroX * 1000 + macroY)
   const [cols, rows] = world.tiles.zona
@@ -459,34 +471,63 @@ function generateZona(world, macroX, macroY, reglas, macroData) {
   return { h, temp, presion, hum, wu, wv, flora, rios }
 }
 
-function generateMapa(world, macroX, macroY, zonaX, zonaY, reglas) {
+function generateLocal(world, macroX, macroY, zonaX, zonaY, zData, reglas) {
   const noise = new Perlin(world.seed + macroX * 10000 + macroY * 1000 + zonaX * 100 + zonaY)
   const [cols, rows] = world.tiles.mapa
-  const heights = []
+  const [zCols, zRows] = world.tiles.zona
+  const heights = [], temps = [], hums = [], floras = [], rios = []
   for (let y = 0; y < rows; y++) {
-    heights[y] = []
+    heights[y] = []; temps[y] = []; hums[y] = []; floras[y] = []; rios[y] = []
     for (let x = 0; x < cols; x++) {
-      const gx = macroX * world.tiles.zona[0] + zonaX * cols + x
-      const gy = macroY * world.tiles.zona[1] + zonaY * rows + y
-      const h = noise.fbm(gx, gy, reglas.octaves, reglas.scale, reglas.amplitude, reglas.persistence)
-      heights[y][x] = Math.round(h + reglas.mar)
+      const ny = (zonaY * rows + y + 0.5) / (zRows * rows)
+      const nx = (zonaX * cols + x + 0.5) / (zCols * cols)
+      const baseH = sampleGrid2D(zData.h, nx, ny)
+      const micro = noise.fbm(x * 0.3, y * 0.3, 2, 10, 0.3, 0.5) * 0.08
+      heights[y][x] = Math.max(0, Math.min(1, baseH + micro))
+      temps[y][x] = sampleGrid2D(zData.temp, nx, ny)
+      hums[y][x] = sampleGrid2D(zData.hum, nx, ny)
+      floras[y][x] = sampleGrid2D(zData.flora, nx, ny)
+      rios[y][x] = sampleGrid2D(zData.rios, nx, ny)
     }
   }
-  return heights
+  return { heights, temps, hums, floras, rios }
 }
 
-function generateBlocks(world, macroX, macroY, zonaX, zonaY, mapaX, mapaY, reglas) {
-  const mapHeights = generateMapa(world, macroX, macroY, zonaX, zonaY, reglas)
-  const blk = world.tiles.mapaBlk || 8
+function generateBlocks(world, macroX, macroY, zonaX, zonaY, zData) {
+  const reglas = world.reglas
+  const macroData = generateMacro(world, reglas.macro, 12, 0)
+  const local = generateLocal(world, macroX, macroY, zonaX, zonaY, zData, reglas)
+  const cols = local.heights[0].length, rows = local.heights.length
   const [abajo, arriba] = [world.altura.abajo, world.altura.arriba]
-  const totalH = (abajo + arriba) * 16
+  const voxH = Math.round((abajo + arriba) * 16 * 8 / rows)
+  const hRange = 1
   const blocks = []
-  for (let z = 0; z < blk; z++) {
-    for (let x = 0; x < blk; x++) {
-      const h = mapHeights[z]?.[x] ?? 0
-      const surfY = abajo * 16 + h
-      for (let y = 0; y < totalH; y++) {
-        if (y <= surfY) blocks.push({ x, y, z })
+  for (let z = 0; z < rows; z++) {
+    for (let x = 0; x < cols; x++) {
+      const h = local.heights[z][x]
+      const surfY = Math.round(h * voxH)
+      const t = local.temps[z][x]
+      const hum = local.hums[z][x]
+      const flora = local.floras[z][x]
+      const rio = local.rios[z][x]
+      for (let y = 0; y <= surfY; y++) {
+        let color
+        const aboveWater = h >= 0.5
+        if (!aboveWater) {
+          color = { r: 25 / 255, g: 60 / 255, b: 120 / 255 }
+        } else if (surfY - y < 1 && rio > 0.3) {
+          color = { r: 40 / 255, g: 100 / 255, b: 140 / 255 }
+        } else if (surfY - y < 1) {
+          const green = Math.min(1, flora * 0.5 + 0.15 + t * 0.15)
+          color = { r: 80 / 255 * green, g: 160 / 255 * green, b: 40 / 255 * green }
+        } else if (surfY - y < 4) {
+          const brown = 0.7 - (surfY - y) * 0.08
+          color = { r: 140 / 255 * brown, g: 100 / 255 * brown, b: 60 / 255 * brown }
+        } else {
+          const gray = 0.5 + (surfY - y) / voxH * 0.4
+          color = { r: gray, g: gray * 0.9, b: gray * 0.8 }
+        }
+        blocks.push({ x, y, z, color })
       }
     }
   }
@@ -597,11 +638,12 @@ function heightGray(h, minH, maxH) {
 }
 
 function biomeColor(temp, hum) {
-  if (hum < 0.3) return '#c8b060'
-  if (temp < 0.3) return '#608080'
-  if (temp > 0.7 && hum > 0.6) return '#307030'
-  if (temp > 0.6) return '#60a030'
-  return '#80b040'
+  const t = Math.max(0, Math.min(1, temp))
+  const h = Math.max(0, Math.min(1, hum))
+  const r = Math.round(60 + h * 100 + (1 - t) * 60)
+  const g = Math.round(60 + h * 120 + t * 40)
+  const b = Math.round(40 + (1 - t) * 40 + (1 - h) * 20)
+  return `rgb(${r},${g},${b})`
 }
 
 function humColor(v, alpha) {
@@ -823,35 +865,39 @@ function render2D() {
       }
     }
   } else if (activeLayer === 'mapa' && selMacro && selZona) {
-    const mData = generateMapa(worldData, selMacro[0], selMacro[1], selZona[0], selZona[1], reglas.mapa)
+    const macroData = generateMacro(worldData, reglas.macro, hGlobal, estGlobal)
+    const zData = generateZona(worldData, selMacro[0], selMacro[1], reglas.zona, macroData)
+    const lData = generateLocal(worldData, selMacro[0], selMacro[1], selZona[0], selZona[1], zData, reglas)
     const [cols, rows] = worldData.tiles.mapa
     const cw = w / cols, ch = h / rows
-    // Compute temps from height for mapa (higher = colder)
-    let mMin = Infinity, mMax = -Infinity
-    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-      const h = mData[y][x]
-      if (h < mMin) mMin = h; if (h > mMax) mMax = h
-    }
-    const mRange = mMax - mMin || 1
+    const hRange = 1
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const h = mData[y][x]
-        if (showDepth && showHeat) {
-          ctx.fillStyle = heightGray(h, -reglas.mapa.amplitude, reglas.mapa.amplitude)
-          ctx.fillRect(x * cw, y * ch, cw, ch)
-          const t = 1 - (h - mMin) / mRange
-          ctx.fillStyle = tempColor(Math.max(0, Math.min(1, t)), 0.45)
-          ctx.fillRect(x * cw, y * ch, cw, ch)
-        } else if (showDepth) {
-          ctx.fillStyle = heightGray(h, -reglas.mapa.amplitude, reglas.mapa.amplitude)
-          ctx.fillRect(x * cw, y * ch, cw, ch)
-        } else if (showHeat) {
-          const t = 1 - (h - mMin) / mRange
-          ctx.fillStyle = tempColor(Math.max(0, Math.min(1, t)))
+        const h = lData.heights[y][x]
+        if (showDepth) {
+          ctx.fillStyle = h >= 0.5 ? depthColor(h, 0, 1) : depthColor(h * 0.44, 0, 1)
           ctx.fillRect(x * cw, y * ch, cw, ch)
         } else {
-          ctx.fillStyle = heightGray(h, -reglas.mapa.amplitude, reglas.mapa.amplitude)
+          ctx.fillStyle = '#1a1a1a'
           ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showHeat) {
+          ctx.fillStyle = tempColor(lData.temps[y][x], 0.3)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showHum) {
+          ctx.fillStyle = humColor(lData.hums[y][x], 0.25)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showRain) {
+          ctx.fillStyle = rioColor(lData.rios[y][x], 0.3)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showBiome) {
+          ctx.fillStyle = biomeColor(lData.temps[y][x], lData.hums[y][x])
+          ctx.globalAlpha = 0.4
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+          ctx.globalAlpha = 1
         }
         if (selMapa && selMapa[0] === x && selMapa[1] === y) {
           ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3; ctx.strokeRect(x * cw, y * ch, cw, ch)
@@ -890,13 +936,14 @@ function init3D(container) {
   const w = container.clientWidth, h = container.clientHeight
   scene3d = new THREE.Scene()
   scene3d.background = new THREE.Color(0x1a1a1a)
+  const gs2 = Math.max(worldData.tiles.mapa[0], 12)
   camera3d = new THREE.PerspectiveCamera(50, w / h, 0.1, 200)
-  camera3d.position.set(15, 12, 15)
+  camera3d.position.set(gs2 * 1.5, gs2, gs2 * 1.5)
   renderer3d = new THREE.WebGLRenderer({ antialias: true })
   renderer3d.setSize(w, h)
   container.appendChild(renderer3d.domElement)
   controls3d = new OrbitControls(camera3d, renderer3d.domElement)
-  controls3d.target.set(4, 0, 4)
+  controls3d.target.set(gs2 / 2, 0, gs2 / 2)
   controls3d.enableDamping = true
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.4)
@@ -905,8 +952,8 @@ function init3D(container) {
   dir.position.set(10, 20, 10)
   scene3d.add(dir)
 
-  const grid = new THREE.GridHelper(12, 12, 0x444444, 0x333333)
-  grid.position.set(4, -0.5, 4)
+  const grid = new THREE.GridHelper(gs2, gs2, 0x444444, 0x333333)
+  grid.position.set(gs2 / 2 - 0.5, -0.5, gs2 / 2 - 0.5)
   scene3d.add(grid)
 
   animate3D()
@@ -918,28 +965,37 @@ function animate3D() {
   if (renderer3d && scene3d && camera3d) renderer3d.render(scene3d, camera3d)
 }
 
-function showMap3D(macroX, macroY, zonaX, zonaY, mapaX, mapaY) {
+function showMap3D(macroX, macroY, zonaX, zonaY) {
   if (!scene3d) return
   while (scene3d.children.length > 3) scene3d.remove(scene3d.children[3])
   const reglas = worldData.reglas
-  const blk = worldData.tiles.mapaBlk || 8
-  const blocks = generateBlocks(worldData, macroX, macroY, zonaX, zonaY, mapaX, mapaY, reglas)
+  const macroData = generateMacro(worldData, reglas.macro, hGlobal, estGlobal)
+  const zData = generateZona(worldData, macroX, macroY, reglas.zona, macroData)
+  const blocks = generateBlocks(worldData, macroX, macroY, zonaX, zonaY, zData)
+  const cols = worldData.tiles.mapa[0]
   const geom = new THREE.BoxGeometry(0.9, 0.9, 0.9)
-  const mat = new THREE.MeshStandardMaterial({ color: 0xcccccc })
-  const merged = new THREE.InstancedMesh(geom, mat, Math.min(blocks.length, 10000))
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: false })
+  const count = Math.min(blocks.length, 30000)
+  const merged = new THREE.InstancedMesh(geom, mat, count)
   const dummy = new THREE.Object3D()
+  const color = new THREE.Color()
   let idx = 0
   for (const b of blocks) {
-    if (idx >= 10000) break
+    if (idx >= count) break
     dummy.position.set(b.x, b.y, b.z)
     dummy.updateMatrix()
     merged.setMatrixAt(idx, dummy.matrix)
+    if (b.color) {
+      color.setRGB(b.color.r, b.color.g, b.color.b)
+      merged.setColorAt(idx, color)
+    }
     idx++
   }
   merged.count = idx
   merged.instanceMatrix.needsUpdate = true
+  if (merged.instanceColor) merged.instanceColor.needsUpdate = true
   scene3d.add(merged)
-  controls3d.target.set(blk / 2, 0, blk / 2)
+  controls3d.target.set(cols / 2, 0, cols / 2)
 }
 
 function toggle3D() {
@@ -950,8 +1006,8 @@ function toggle3D() {
     previewCanvas.style.display = 'none'
     canvas3d.style.display = 'block'
     init3D(canvas3d)
-    if (selMacro && selZona && selMapa) {
-      showMap3D(selMacro[0], selMacro[1], selZona[0], selZona[1], selMapa[0], selMapa[1])
+    if (selMacro && selZona) {
+      showMap3D(selMacro[0], selMacro[1], selZona[0], selZona[1])
     }
     setTimeout(() => { if (renderer3d) { const w = canvas3d.clientWidth, h = canvas3d.clientHeight; renderer3d.setSize(w, h); camera3d.aspect = w / h; camera3d.updateProjectionMatrix() } }, 50)
   } else {
@@ -994,7 +1050,7 @@ function onCanvasClick(e) {
     const x = Math.floor(cx / cw), y = Math.floor(cy / ch)
     if (x >= 0 && x < cols && y >= 0 && y < rows) {
       selMapa = [x, y]
-      if (show3d) showMap3D(selMacro[0], selMacro[1], selZona[0], selZona[1], selMapa[0], selMapa[1])
+      if (show3d) showMap3D(selMacro[0], selMacro[1], selZona[0], selZona[1])
       render2D(); renderLayerNav()
     }
   }
@@ -1204,7 +1260,7 @@ function renderReglas() {
   document.getElementById('wg-generate')?.addEventListener('click', () => {
     saveRegla()
     render2D()
-    if (show3d && selMacro && selZona && selMapa) showMap3D(selMacro[0], selMacro[1], selZona[0], selZona[1], selMapa[0], selMapa[1])
+    if (show3d && selMacro && selZona) showMap3D(selMacro[0], selMacro[1], selZona[0], selZona[1])
   })
 }
 
