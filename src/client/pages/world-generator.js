@@ -1483,11 +1483,13 @@ function renderFullMap() {
   const zRange = macroData.maxH - macroData.minH || 1
   const [mc, mr] = worldData.tiles.macro
   const [zc, zr] = worldData.tiles.zona
-  const px = 8
+  const totalW = mc * zc, totalH = mr * zr
+  const MAX_DIM = 2048
+  const px = Math.max(1, Math.min(8, Math.floor(MAX_DIM / totalW), Math.floor(MAX_DIM / totalH)))
   const useTerrain = document.getElementById('wg-show-terrain')?.checked === true
   fullCanvas = document.createElement('canvas')
-  fullCanvas.width = mc * zc * px
-  fullCanvas.height = mr * zr * px
+  fullCanvas.width = totalW * px
+  fullCanvas.height = totalH * px
   const ctx = fullCanvas.getContext('2d')
 
   for (let my = 0; my < mr; my++) {
@@ -1508,7 +1510,10 @@ function renderFullMap() {
     }
   }
 
-  fullZoom = 1; fullPanX = 0; fullPanY = 0
+  const container = previewCanvas.parentElement
+  const cw = container.clientWidth - 4, ch = container.clientHeight - 4
+  fullZoom = Math.min(cw / fullCanvas.width, ch / fullCanvas.height, 2)
+  fullPanX = 0; fullPanY = 0
   drawFullMap()
 }
 
@@ -1520,6 +1525,11 @@ function drawFullMap() {
   const ctx = previewCtx
   ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, w, h)
   if (!fullCanvas) return
+  const vw = fullCanvas.width * fullZoom, vh = fullCanvas.height * fullZoom
+  const maxPanX = 0, minPanX = Math.min(0, w - vw)
+  const maxPanY = 0, minPanY = Math.min(0, h - vh)
+  fullPanX = Math.max(minPanX, Math.min(maxPanX, fullPanX))
+  fullPanY = Math.max(minPanY, Math.min(maxPanY, fullPanY))
   ctx.save()
   ctx.translate(fullPanX, fullPanY)
   ctx.scale(fullZoom, fullZoom)
@@ -1661,7 +1671,11 @@ export function renderWorldGenerator() {
 
   ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain', 'wg-show-erosion', 'wg-show-biome', 'wg-show-terrain'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
-      if (fullMapView) { drawFullMap(); return }
+      if (fullMapView) {
+        if (id === 'wg-show-terrain') renderFullMap()
+        else drawFullMap()
+        return
+      }
       render2D()
     })
   })
@@ -1675,12 +1689,12 @@ export function renderWorldGenerator() {
     if (!fullMapView || !fullCanvas) return
     e.preventDefault()
     const z = e.deltaY > 0 ? 0.9 : 1.1
-    fullZoom = Math.max(1, Math.min(20, fullZoom * z))
+    fullZoom = Math.max(0.1, Math.min(20, fullZoom * z))
     drawFullMap()
   })
 
   previewCanvas.addEventListener('mousedown', e => {
-    if (!fullMapView || fullZoom <= 1) return
+    if (!fullMapView || !fullCanvas) return
     fullDragging = true
     fullDragStartX = e.clientX - fullPanX
     fullDragStartY = e.clientY - fullPanY
@@ -1692,6 +1706,11 @@ export function renderWorldGenerator() {
     drawFullMap()
   })
   window.addEventListener('mouseup', () => { fullDragging = false })
+
+  window.addEventListener('resize', () => {
+    if (fullMapView) drawFullMap()
+    else render2D()
+  })
 
   const configInputs = ['wg-seed', 'wg-msize', 'wg-zsize', 'wg-mpsize', 'wg-abajo', 'wg-arriba']
   const applyConfig = () => {
