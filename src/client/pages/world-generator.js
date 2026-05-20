@@ -443,38 +443,41 @@ function generateLocal(world, macroX, macroY, zonaX, zonaY, zData, reglas, horaG
     }
   }
 
-  // --- Ríos: 1-pass accumulación desde lluvia local ---
-  const lluvia = []
+  // --- Ríos: flow accumulation (sorted highest→lowest) ---
+  const water = []
   for (let y = 0; y < rows; y++) {
-    lluvia[y] = []
+    water[y] = []
     for (let x = 0; x < cols; x++)
-      lluvia[y][x] = Math.max(0, hums[y][x] * (1 - temps[y][x]) * 3)
+      water[y][x] = Math.max(0, hums[y][x] * (1 - temps[y][x]) * 3)
   }
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      if (heights[y][x] < 0.5) continue
-      let minN = heights[y][x], minX = x, minY = y
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue
-          const ny = y + dy, nx = x + dx
-          if (ny >= 0 && ny < rows && nx >= 0 && nx < cols && heights[ny][nx] < minN) {
-            minN = heights[ny][nx]; minX = nx; minY = ny
-          }
+  const sorted = []
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      sorted.push({ x, y, h: heights[y][x] })
+  sorted.sort((a, b) => b.h - a.h)
+  for (const cell of sorted) {
+    if (cell.h < 0.5) continue
+    let minH = cell.h, minX = cell.x, minY = cell.y
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue
+        const ny = cell.y + dy, nx = cell.x + dx
+        if (ny >= 0 && ny < rows && nx >= 0 && nx < cols && heights[ny][nx] < minH) {
+          minH = heights[ny][nx]; minX = nx; minY = ny
         }
       }
-      if (minY !== y || minX !== x)
-        rios[y][x] += lluvia[y][x] * 0.3
     }
+    if (minY !== cell.y || minX !== cell.x)
+      water[minY][minX] += water[cell.y][cell.x]
   }
-  let rMin = Infinity, rMax = -Infinity
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    if (rios[y][x] < rMin) rMin = rios[y][x]
-    if (rios[y][x] > rMax) rMax = rios[y][x]
-  }
-  const rRange = rMax - rMin || 1
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++)
-    rios[y][x] = (rios[y][x] - rMin) / rRange
+  let wMax = 0
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      if (water[y][x] > wMax) wMax = water[y][x]
+  wMax = wMax || 1
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      rios[y][x] = Math.min(1, Math.sqrt(water[y][x] / wMax))
 
   // --- Erosión dinámica (desgaste por pendiente × lluvia × estación) ---
   const estFactor = estacion === 1 ? 1.5 : estacion === 3 ? 1.2 : 1
@@ -1675,7 +1678,7 @@ export function renderWorldGenerator() {
             <input type="checkbox" id="wg-show-hum"> <span>💧 Humedad</span>
           </label>
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#47f">
-            <input type="checkbox" id="wg-show-rain"> <span>☔ Lluvia</span>
+            <input type="checkbox" id="wg-show-rain" checked> <span>☔ Ríos</span>
           </label>
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#f84">
             <input type="checkbox" id="wg-show-erosion"> <span>🧱 Erosión</span>
