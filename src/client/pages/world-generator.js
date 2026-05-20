@@ -716,6 +716,47 @@ function rioColor(v, alpha) {
   return `rgb(${r},${g},${b})`
 }
 
+function terrainColor(h, temp) {
+  const t = Math.max(0, Math.min(1, h))
+  const tm = Math.max(0, Math.min(1, temp))
+  if (t < 0.5) {
+    const depth = 1 - t / 0.5
+    const r = Math.round(5 + depth * 55)
+    const g = Math.round(10 + depth * 130)
+    const b = Math.round(50 + depth * 140)
+    return `rgb(${r},${g},${b})`
+  }
+  const land = (t - 0.5) / 0.5
+  if (land < 0.1) {
+    const beach = land / 0.1
+    const r = Math.round(170 + beach * 20)
+    const g = Math.round(150 + beach * 30)
+    const b = Math.round(100 + beach * 10)
+    return `rgb(${r},${g},${b})`
+  }
+  const cold = 1 - tm
+  if (land < 0.4) {
+    const f = (land - 0.1) / 0.3
+    const base = tm > 0.6 ? 1 : tm > 0.3 ? 0.6 : 0.2
+    const r = Math.round((80 + f * 60) * base + cold * 80)
+    const g = Math.round((120 + f * 30) * base + cold * 60)
+    const b = Math.round((40 + f * 20) * base + cold * 80)
+    return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`
+  }
+  if (land < 0.7) {
+    const f = (land - 0.4) / 0.3
+    const r = Math.round((140 + f * 10) * (1 - cold * 0.3) + cold * 120)
+    const g = Math.round((150 - f * 20) * (1 - cold * 0.3) + cold * 100)
+    const b = Math.round((60 + f * 60) * (1 - cold * 0.3) + cold * 120)
+    return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`
+  }
+  const snow = (land - 0.7) / 0.3
+  const r = Math.round(150 + snow * 60 + cold * 20)
+  const g = Math.round(150 + snow * 70 + cold * 20)
+  const b = Math.round(150 + snow * 90 + cold * 20)
+  return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`
+}
+
 function biomeOverlayColor(v, alpha) {
   const t = Math.max(0, Math.min(1, v))
   const rp = Math.round(80 + t * 120)
@@ -747,6 +788,7 @@ function render2D() {
   const showRain = document.getElementById('wg-show-rain')?.checked !== false
   const showErosion = document.getElementById('wg-show-erosion')?.checked !== false
   const showBiome = document.getElementById('wg-show-biome')?.checked !== false
+  const showTerrain = document.getElementById('wg-show-terrain')?.checked !== false
   const hGlobal = worldData.horaGlobal ?? 6
   const estGlobal = reglas.macro.estacion ?? 0
 
@@ -761,7 +803,9 @@ function render2D() {
     }
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        if (showDepth) {
+        if (showTerrain) {
+          ctx.fillStyle = terrainColor(data.H[y][x], data.TL[y][x])
+        } else if (showDepth) {
           ctx.fillStyle = heightGray(data.H[y][x], data.minH, data.maxH)
         } else {
           ctx.fillStyle = '#1a1a1a'
@@ -823,7 +867,9 @@ function render2D() {
     const zRange = macroData.maxH - macroData.minH || 1
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        if (showDepth) {
+        if (showTerrain) {
+          ctx.fillStyle = terrainColor(zData.h[y][x], zData.temp[y][x])
+        } else if (showDepth) {
           const t = (zData.h[y][x] - macroData.minH) / zRange
           const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
           ctx.fillStyle = `rgb(${gray},${gray},${gray})`
@@ -874,7 +920,10 @@ function render2D() {
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const h = lData.heights[y][x]
-        if (showDepth) {
+        if (showTerrain) {
+          ctx.fillStyle = terrainColor(h, lData.temps[y][x])
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        } else if (showDepth) {
           ctx.fillStyle = h >= 0.5 ? depthColor(h, 0, 1) : depthColor(h * 0.44, 0, 1)
           ctx.fillRect(x * cw, y * ch, cw, ch)
         } else {
@@ -1435,6 +1484,7 @@ function renderFullMap() {
   const [mc, mr] = worldData.tiles.macro
   const [zc, zr] = worldData.tiles.zona
   const px = 8
+  const useTerrain = document.getElementById('wg-show-terrain')?.checked === true
   fullCanvas = document.createElement('canvas')
   fullCanvas.width = mc * zc * px
   fullCanvas.height = mr * zr * px
@@ -1445,9 +1495,13 @@ function renderFullMap() {
       const zData = generateZona(worldData, mx, my, reglas.zona, macroData)
       for (let zy = 0; zy < zr; zy++) {
         for (let zx = 0; zx < zc; zx++) {
-          const t = (zData.h[zy][zx] - macroData.minH) / zRange
-          const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
-          ctx.fillStyle = `rgb(${gray},${gray},${gray})`
+          if (useTerrain) {
+            ctx.fillStyle = terrainColor(zData.h[zy][zx], zData.temp[zy][zx])
+          } else {
+            const t = (zData.h[zy][zx] - macroData.minH) / zRange
+            const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
+            ctx.fillStyle = `rgb(${gray},${gray},${gray})`
+          }
           ctx.fillRect((mx * zc + zx) * px, (my * zr + zy) * px, px, px)
         }
       }
@@ -1563,6 +1617,9 @@ export function renderWorldGenerator() {
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#f84">
             <input type="checkbox" id="wg-show-erosion"> <span>🧱 Erosión</span>
           </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#ea0">
+            <input type="checkbox" id="wg-show-terrain"> <span>🏔 Terreno</span>
+          </label>
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#4c4">
             <input type="checkbox" id="wg-show-biome"> <span>🌿 Bioma</span>
           </label>
@@ -1602,7 +1659,7 @@ export function renderWorldGenerator() {
     }
   })
 
-  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain', 'wg-show-erosion', 'wg-show-biome'].forEach(id => {
+  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain', 'wg-show-erosion', 'wg-show-biome', 'wg-show-terrain'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
       if (fullMapView) { drawFullMap(); return }
       render2D()
