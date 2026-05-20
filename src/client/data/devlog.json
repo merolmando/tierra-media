@@ -100,5 +100,20 @@
       "Bugfix: renderReglas() no se llamaba al navegar por click en canvas entre capas",
       "Bugfix: océanos generaban demasiadas islas por ruido detalle sin atenuación (factorTierra cuadrático)"
     ]
+  },
+  {
+    "date": "2026-05-21",
+    "title": "Capa 1 — Motor climático implementado",
+    "entries": [
+      "generateMacro reescrito: 3 matrices base (H 0.0–1.0, TL latitud, TR real con altura+profundidad)",
+      "Presión como inversa de temperatura real: alta presión donde hace frío",
+      "Viento con gradiente de presión + Coriolis + aceleración en crestas del terreno",
+      "Humedad: trazado de viento desde océanos hacia tierra (cono de 5 direcciones), atenuación por distancia y altura",
+      "Lluvia: humedad × pendiente del terreno = precipitación en laderas",
+      "Parámetros nuevos: humEscala, lluviaFactor, distMaxCostas en reglas macro",
+      "2 overlays nuevos: 💧 Humedad (azul verdoso) y ☔ Lluvia (azul profundo) en viz bar",
+      "Altura H normalizada a 0.0–1.0 (antes rango raw), océano = H < 0.5",
+      "factorTierra en zona ajustado para H normalizada"
+    ]
   }
 ]
