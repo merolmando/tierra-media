@@ -130,5 +130,15 @@
       "horaGlobal se guarda con el mundo (save/load), default 6 (amanecer)",
       "Cleanup detiene simulación al salir del World Generator"
     ]
+  },
+  {
+    "date": "2026-05-21",
+    "title": "Capa 1 — Erosión hidráulica",
+    "entries": [
+      "aplicarErosion(): desgasta H por lluvia × pendiente, deposita sedimento en celda más baja (×0.6), loop por años",
+      "Parámetros: erosionFactor (0.005 default), añosErosion (0 default) en reglas macro",
+      "Overlay 🧱 Erosión: azul = deposición, rojo = erosión, alpha 0.25",
+      "Erosión se recalcula desde cero en cada render (efímera, no persistente)"
+    ]
   }
 ]

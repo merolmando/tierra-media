@@ -33,7 +33,7 @@ let ultimoTick = 0
 let animSimId = null
 
 const DEFAULT_REGLAS = {
-  macro: { distorsionFrecuencia: 0.3, distorsionMagnitud: 20, cotaMar: 0.45, transicionCosta: 0.1, detalleRuido: 30, detalleOctaves: 4, placas: 4, tectFuerza: 0.5, tectElevacion: 0.3, tectSubsidencia: 0.2, vientoEscala: 1, alturaInflTemp: 0.3, humEscala: 0.5, lluviaFactor: 1, distMaxCostas: 5, velocidadDia: 25, estacion: 0 },
+  macro: { distorsionFrecuencia: 0.3, distorsionMagnitud: 20, cotaMar: 0.45, transicionCosta: 0.1, detalleRuido: 30, detalleOctaves: 4, placas: 4, tectFuerza: 0.5, tectElevacion: 0.3, tectSubsidencia: 0.2, vientoEscala: 1, alturaInflTemp: 0.3, humEscala: 0.5, lluviaFactor: 1, distMaxCostas: 5, velocidadDia: 25, estacion: 0, erosionFactor: 0.005, añosErosion: 0 },
   zona: { detalleEscala: 20, detalleOctaves: 3, detalleAmp: 0.3, varTemp: 0.2, eoEolica: 0.3, eoHidrica: 0.3 },
   mapa: { noise: 'perlin', scale: 15, octaves: 3, amplitude: 10, persistence: 0.5, mar: 0 },
 }
@@ -441,6 +441,48 @@ function generateBlocks(world, macroX, macroY, zonaX, zonaY, mapaX, mapaY, regla
   return blocks
 }
 
+// --- Erosión hidráulica ---
+function aplicarErosion(H, R, cols, rows, factor, años) {
+  const delta = []
+  for (let y = 0; y < rows; y++) {
+    delta[y] = []
+    for (let x = 0; x < cols; x++) delta[y][x] = 0
+  }
+  for (let iter = 0; iter < años; iter++) {
+    for (let y = 1; y < rows - 1; y++) {
+      for (let x = 1; x < cols - 1; x++) {
+        if (H[y][x] < 0.5) continue
+        const hSlope = Math.abs(H[y][x] - H[y - 1][x]) + Math.abs(H[y][x] - H[y + 1][x])
+        const vSlope = Math.abs(H[y][x] - H[y][x - 1]) + Math.abs(H[y][x] - H[y][x + 1])
+        const slope = (hSlope + vSlope) * 2.5
+        const amount = R[y][x] * slope * factor
+        if (amount > 0.00001) {
+          let minN = H[y][x], minX = x, minY = y
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue
+              const ny = y + dy, nx = x + dx
+              if (ny >= 0 && ny < rows && nx >= 0 && nx < cols && H[ny][nx] < minN) {
+                minN = H[ny][nx]; minX = nx; minY = ny
+              }
+            }
+          }
+          if (minY !== y || minX !== x) {
+            H[y][x] -= amount
+            H[minY][minX] += amount * 0.6
+            delta[y][x] -= amount
+            delta[minY][minX] += amount * 0.6
+          }
+        }
+      }
+    }
+  }
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      H[y][x] = Math.max(0, Math.min(1, H[y][x]))
+  return delta
+}
+
 // --- Rendering ---
 function tempColor(t, alpha) {
   const v = Math.max(0, Math.min(1, t))
@@ -519,6 +561,22 @@ function humColor(v, alpha) {
   return `rgb(${r},${g},${b})`
 }
 
+function eroColor(v, alpha) {
+  const t = Math.max(-1, Math.min(1, v * 100))
+  if (t > 0) {
+    const r = Math.round(20 + t * 100)
+    const g = Math.round(20 + t * 40)
+    const b = Math.round(80 + t * 175)
+    if (alpha !== undefined) return `rgba(${r},${g},${b},${alpha})`
+    return `rgb(${r},${g},${b})`
+  }
+  const r = Math.round(180 + t * 100)
+  const g = Math.round(60 + t * 60)
+  const b = Math.round(60 + t * 40)
+  if (alpha !== undefined) return `rgba(${r},${g},${b},${alpha})`
+  return `rgb(${r},${g},${b})`
+}
+
 function rainColor(v, alpha) {
   const t = Math.max(0, Math.min(1, v))
   const r = Math.round(30 + t * 60)
@@ -566,6 +624,7 @@ function render2D() {
   const showTec = document.getElementById('wg-show-tec')?.checked !== false
   const showHum = document.getElementById('wg-show-hum')?.checked !== false
   const showRain = document.getElementById('wg-show-rain')?.checked !== false
+  const showErosion = document.getElementById('wg-show-erosion')?.checked !== false
   const hGlobal = worldData.horaGlobal ?? 6
   const estGlobal = reglas.macro.estacion ?? 0
 
@@ -573,6 +632,11 @@ function render2D() {
     const data = generateMacro(worldData, reglas.macro, hGlobal, estGlobal)
     const [cols, rows] = worldData.tiles.macro
     const cw = w / cols, ch = h / rows
+    const años = reglas.macro.añosErosion ?? 0
+    const eroFactor = reglas.macro.erosionFactor ?? 0.005
+    if (años > 0 && eroFactor > 0) {
+      data.erosionDelta = aplicarErosion(data.H, data.R, cols, rows, eroFactor, años)
+    }
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         if (showDepth) {
@@ -600,6 +664,10 @@ function render2D() {
         }
         if (showRain) {
           ctx.fillStyle = rainColor(data.R[y][x], 0.2)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showErosion && data.erosionDelta) {
+          ctx.fillStyle = eroColor(data.erosionDelta[y][x], 0.25)
           ctx.fillRect(x * cw, y * ch, cw, ch)
         }
         if (selMacro && selMacro[0] === x && selMacro[1] === y) {
@@ -924,6 +992,15 @@ function renderReglas() {
       <option value="3"${(r.estacion ?? 0) === 3 ? ' selected' : ''}>Invierno</option>
     </select>
     <div style="font-size:11px;color:#666;margin-top:4px">Estación modifica temperatura global y duración del día.</div>
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">EROSIÓN HÍDRICA</div>
+    <div class="wg-label">Factor de erosión</div>
+    <input id="wg-eroFactor" type="number" step="0.001" min="0" max="0.1" value="${r.erosionFactor ?? 0.005}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Años de erosión</div>
+    <input id="wg-eroAnios" type="number" step="1" min="0" max="10000" value="${r.añosErosion ?? 0}" style="width:100%;margin-bottom:6px">
+    <div style="font-size:11px;color:#666;margin-top:4px">La lluvia desgasta pendientes y deposita sedimento en zonas bajas.</div>
   ` : activeLayer === 'zona' ? `
     <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">DETALLE SOBRE BASE MACRO</div>
     <div class="wg-label">Escala detalle</div>
@@ -983,6 +1060,8 @@ function renderReglas() {
     if (g('wg-distCostas')) r2.distMaxCostas = parseFloat(g('wg-distCostas').value) || 0.5
     if (g('wg-velDia')) r2.velocidadDia = parseFloat(g('wg-velDia').value) || 25
     if (g('wg-estacion')) r2.estacion = parseInt(g('wg-estacion').value) || 0
+    if (g('wg-eroFactor')) r2.erosionFactor = parseFloat(g('wg-eroFactor').value) || 0
+    if (g('wg-eroAnios')) r2.añosErosion = parseInt(g('wg-eroAnios').value) || 0
     if (g('wg-znEsc')) r2.detalleEscala = parseFloat(g('wg-znEsc').value) || 1
     if (g('wg-znOct')) r2.detalleOctaves = parseInt(g('wg-znOct').value) || 1
     if (g('wg-znAmp')) r2.detalleAmp = parseFloat(g('wg-znAmp').value) || 0.05
@@ -1298,6 +1377,9 @@ export function renderWorldGenerator() {
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#47f">
             <input type="checkbox" id="wg-show-rain"> <span>☔ Lluvia</span>
           </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#f84">
+            <input type="checkbox" id="wg-show-erosion"> <span>🧱 Erosión</span>
+          </label>
         </div>
       </div>
       <div class="tool-props" id="wg-reglas" style="overflow-y:auto;font-size:12px">
@@ -1334,7 +1416,7 @@ export function renderWorldGenerator() {
     }
   })
 
-  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain'].forEach(id => {
+  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain', 'wg-show-erosion'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
       if (fullMapView) { drawFullMap(); return }
       render2D()
