@@ -140,5 +140,21 @@
       "Overlay 🧱 Erosión: azul = deposición, rojo = erosión, alpha 0.25",
       "Erosión se recalcula desde cero en cada render (efímera, no persistente)"
     ]
+  },
+  {
+    "date": "2026-05-21",
+    "title": "Capa 2 — Regional completa",
+    "entries": [
+      "generateZona reescrito: herencia completa de macro (H, TR, P, Hum, WU/WV) vía sampleGrid 3×3",
+      "Rampa base: interpolación bilineal de altura macro como tendencia del terreno",
+      "Rango dinámico: ruido detalle acotado por baseH (param rangoDetalle, 0.15 default)",
+      "Ruido adaptativo: octavas y escala varían por lerp según baseH (más octavas en montaña)",
+      "Flora density: temp × hum × floraFactor (0–1), overlay compartido",
+      "Ríos: 3 pases de acumulación de agua desde lluvia local, escalado 0–1, overlay ☔",
+      "Output: h, temp, presion, hum, wu, wv, flora, rios (8 matrices)",
+      "Reglas zona nuevas: rangoDetalle, varHum, floraFactor",
+      "Overlays compartidos con macro: 🏔 🌡 💧 🌬 ☔ 🧱 + nuevo 🌿 Bioma",
+      "Bioma usa biomeColor(temp, hum) con alpha 0.4 sobre altura en grises"
+    ]
   }
 ]

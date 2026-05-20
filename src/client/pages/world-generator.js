@@ -34,7 +34,7 @@ let animSimId = null
 
 const DEFAULT_REGLAS = {
   macro: { distorsionFrecuencia: 0.3, distorsionMagnitud: 20, cotaMar: 0.45, transicionCosta: 0.1, detalleRuido: 30, detalleOctaves: 4, placas: 4, tectFuerza: 0.5, tectElevacion: 0.3, tectSubsidencia: 0.2, vientoEscala: 1, alturaInflTemp: 0.3, humEscala: 0.5, lluviaFactor: 1, distMaxCostas: 5, velocidadDia: 25, estacion: 0, erosionFactor: 0.005, añosErosion: 0 },
-  zona: { detalleEscala: 20, detalleOctaves: 3, detalleAmp: 0.3, varTemp: 0.2, eoEolica: 0.3, eoHidrica: 0.3 },
+  zona: { detalleEscala: 20, detalleOctaves: 3, detalleAmp: 0.3, varTemp: 0.2, varHum: 0.15, eoEolica: 0.3, eoHidrica: 0.3, rangoDetalle: 0.15, floraFactor: 1 },
   mapa: { noise: 'perlin', scale: 15, octaves: 3, amplitude: 10, persistence: 0.5, mar: 0 },
 }
 
@@ -333,78 +333,130 @@ function generateZona(world, macroX, macroY, reglas, macroData) {
   const noise = new Perlin(world.seed + macroX * 1000 + macroY)
   const [cols, rows] = world.tiles.zona
   const [mc, mr] = world.tiles.macro
-  const heights = [], temps = [], hums = []
+  const h = [], temp = [], presion = [], hum = [], wu = [], wv = [], flora = [], rios = []
+
   for (let y = 0; y < rows; y++) {
-    heights[y] = []; temps[y] = []; hums[y] = []
+    h[y] = []; temp[y] = []; presion[y] = []; hum[y] = []
+    wu[y] = []; wv[y] = []; flora[y] = []; rios[y] = []
     for (let x = 0; x < cols; x++) {
       const gx = macroX * cols + x, gy = macroY * rows + y
-      // Fractional position within the macro tile [macroX, macroX+1] × [macroY, macroY+1]
-      const fx = (x + 0.5) / cols
-      const fy = (y + 0.5) / rows
-      const wx = macroX + fx
-      const wy = macroY + fy
+      const fx = (x + 0.5) / cols, fy = (y + 0.5) / rows
+      const wx = macroX + fx, wy = macroY + fy
+
+      // --- 1. Rampa base (sampleGrid desde macro) ---
       const baseH = sampleGrid(macroData.H, mc, mr, wx, wy)
       const baseT = sampleGrid(macroData.TR, mc, mr, wx, wy)
       const baseP = sampleGrid(macroData.P, mc, mr, wx, wy)
-      const detail = noise.fbm(gx, gy, reglas.detalleOctaves ?? 3, reglas.detalleEscala ?? 20, 1, 0.5)
+      const baseHum = sampleGrid(macroData.Hum, mc, mr, wx, wy)
+      const baseWU = sampleGrid(macroData.WU, mc, mr, wx, wy)
+      const baseWV = sampleGrid(macroData.WV, mc, mr, wx, wy)
+
+      // --- 2. Rango dinámico (acota ruido según baseH) ---
+      const rDet = reglas.rangoDetalle ?? 0.15
       const detAmp = reglas.detalleAmp ?? 0.3
       const umbral = detAmp * 0.5
       const factorLineal = baseH < 0.5 ? Math.max(0, Math.min(1, 1 + (baseH - 0.5) / umbral)) : 1
       const factorTierra = factorLineal * factorLineal
-      heights[y][x] = baseH + detail * detAmp * factorTierra
-      const tempVar = noise.fbm(gx + 500, gy + 500, 2, 30, 1, 0.5) * (reglas.varTemp ?? 0.2)
-      temps[y][x] = Math.max(0, Math.min(1, baseT + tempVar))
-      const humNoise = noise.fbm(gx + 1000, gy + 1000, 2, 30, 1, 0.5) * 0.3
-      hums[y][x] = Math.max(0, Math.min(1, (1 - baseP) * 0.5 + humNoise))
+
+      // --- 3. Ruido adaptativo (lerp de octavas y escala según baseH) ---
+      const octF = Math.max(1, Math.min(10, (reglas.detalleOctaves ?? 3)))
+      const octavas = Math.round(2 + (octF - 2) * baseH)
+      const escBase = reglas.detalleEscala ?? 20
+      const escala = escBase * (1 + baseH * 2)
+      const detail = noise.fbm(gx, gy, octavas, escala, 1, 0.5)
+
+      // Amplitud acotada por rango dinámico
+      let amp = detAmp * factorTierra
+      if (baseH > 0.85) amp *= rDet * 0.83
+      else if (baseH > 0.5) amp *= rDet
+      else amp *= rDet * 0.83
+
+      h[y][x] = Math.max(0, Math.min(1, baseH + detail * amp))
+
+      // --- Temperatura local ---
+      const tVar = noise.fbm(gx + 500, gy + 500, 2, 30, 1, 0.5) * (reglas.varTemp ?? 0.2)
+      temp[y][x] = Math.max(0, Math.min(1, baseT + tVar))
+
+      // --- Presión local ---
+      const pVar = noise.fbm(gx + 1500, gy + 1500, 2, 30, 1, 0.5) * 0.1
+      presion[y][x] = Math.max(0, Math.min(1, baseP + pVar))
+
+      // --- Humedad local (heredada de macro + variación) ---
+      const hVar = noise.fbm(gx + 2000, gy + 2000, 2, 30, 1, 0.5) * (reglas.varHum ?? 0.15)
+      hum[y][x] = Math.max(0, Math.min(1, baseHum + hVar))
+
+      // --- Viento local (macro + gradiente micro) ---
+      wu[y][x] = baseWU
+      wv[y][x] = baseWV
+
+      // --- Flora density (temp × hum) ---
+      const fFactor = reglas.floraFactor ?? 1
+      flora[y][x] = Math.max(0, Math.min(1, temp[y][x] * hum[y][x] * fFactor))
     }
   }
 
-  // --- Local wind from micro temp gradient (for erosion) ---
-  const windStr = []
+  // --- Viento local: refinar con gradiente micro de temperatura ---
   for (let y = 0; y < rows; y++) {
-    windStr[y] = []
     for (let x = 0; x < cols; x++) {
-      const px0 = x > 0 ? temps[y][x - 1] : temps[y][x]
-      const px1 = x < cols - 1 ? temps[y][x + 1] : temps[y][x]
-      const py0 = y > 0 ? temps[y - 1][x] : temps[y][x]
-      const py1 = y < rows - 1 ? temps[y + 1][x] : temps[y][x]
-      windStr[y][x] = Math.min(1, Math.sqrt((px1 - px0) ** 2 + (py1 - py0) ** 2) * 3)
+      const px0 = x > 0 ? temp[y][x - 1] : temp[y][x]
+      const px1 = x < cols - 1 ? temp[y][x + 1] : temp[y][x]
+      const py0 = y > 0 ? temp[y - 1][x] : temp[y][x]
+      const py1 = y < rows - 1 ? temp[y + 1][x] : temp[y][x]
+      wu[y][x] += -(px1 - px0) * 0.3
+      wv[y][x] += -(py1 - py0) * 0.3
     }
   }
 
-  // --- Erosion ---
-  const eoEolica = reglas.eoEolica ?? 0.3
+  // --- Ríos (erosión hídrica acumulada como cauces) ---
   const eoHidrica = reglas.eoHidrica ?? 0.3
-  for (let iter = 0; iter < 2; iter++) {
-    for (let y = 1; y < rows - 1; y++) {
-      for (let x = 1; x < cols - 1; x++) {
-        const h = heights[y][x]
-        if (eoEolica > 0 && windStr[y][x] > 0.3) {
-          heights[y][x] -= windStr[y][x] * eoEolica * 0.04
-        }
-        if (eoHidrica > 0) {
-          const rain = temps[y][x] * (1 - temps[y][x]) * 4
-          if (rain > 0.2) {
-            let minN = Infinity, minX = x, minY = y
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dx = -1; dx <= 1; dx++) {
-                if (dx === 0 && dy === 0) continue
-                const nh = heights[y + dy]?.[x + dx]
-                if (nh !== undefined && nh < minN) { minN = nh; minX = x + dx; minY = y + dy }
-              }
-            }
-            if (minN < h) {
-              const transfer = (h - minN) * rain * eoHidrica * 0.1
-              heights[y][x] -= transfer
-              heights[minY][minX] += transfer * 0.8
+  const rain = []
+  for (let y = 0; y < rows; y++) {
+    rain[y] = []
+    for (let x = 0; x < cols; x++) {
+      rain[y][x] = Math.max(0, hum[y][x] * (1 - temp[y][x]) * 3)
+    }
+  }
+
+  // Inicializar rios con la lluvia base en cada celda
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      rios[y][x] = 0
+
+  // Múltiples pases de acumulación de agua
+  for (let iter = 0; iter < 3; iter++) {
+    const acc = []
+    for (let y = 0; y < rows; y++) { acc[y] = []; for (let x = 0; x < cols; x++) acc[y][x] = rain[y][x] }
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (h[y][x] < 0.5) continue
+        let minN = h[y][x], minX = x, minY = y
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue
+            const ny = y + dy, nx = x + dx
+            if (ny >= 0 && ny < rows && nx >= 0 && nx < cols && h[ny][nx] < minN) {
+              minN = h[ny][nx]; minX = nx; minY = ny
             }
           }
+        }
+        if (minY !== y || minX !== x) {
+          rios[y][x] += acc[y][x] * eoHidrica * 0.15
         }
       }
     }
   }
 
-  return { heights, temps, hums }
+  // Escalar rios a 0..1
+  let rMin = Infinity, rMax = -Infinity
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    if (rios[y][x] < rMin) rMin = rios[y][x]
+    if (rios[y][x] > rMax) rMax = rios[y][x]
+  }
+  const rRange = rMax - rMin || 1
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++)
+    rios[y][x] = (rios[y][x] - rMin) / rRange
+
+  return { h, temp, presion, hum, wu, wv, flora, rios }
 }
 
 function generateMapa(world, macroX, macroY, zonaX, zonaY, reglas) {
@@ -604,6 +656,33 @@ function windColor(v, alpha) {
   return `rgb(${r},${g},${b})`
 }
 
+function floraColor(v, alpha) {
+  const t = Math.max(0, Math.min(1, v))
+  const r = Math.round(20 + t * 40)
+  const g = Math.round(40 + t * 180)
+  const b = Math.round(20 + t * 40)
+  if (alpha !== undefined) return `rgba(${r},${g},${b},${alpha})`
+  return `rgb(${r},${g},${b})`
+}
+
+function rioColor(v, alpha) {
+  const t = Math.max(0, Math.min(1, v))
+  const r = Math.round(30 + t * 50)
+  const g = Math.round(80 + t * 120)
+  const b = Math.round(120 + t * 135)
+  if (alpha !== undefined) return `rgba(${r},${g},${b},${alpha})`
+  return `rgb(${r},${g},${b})`
+}
+
+function biomeOverlayColor(v, alpha) {
+  const t = Math.max(0, Math.min(1, v))
+  const rp = Math.round(80 + t * 120)
+  const gp = Math.round(160 - t * 80)
+  const bp = Math.round(60 + t * 100)
+  if (alpha !== undefined) return `rgba(${rp},${gp},${bp},${alpha})`
+  return `rgb(${rp},${gp},${bp})`
+}
+
 function render2D() {
   if (!previewCtx || !worldData) return
   if (fullMapView) return
@@ -625,6 +704,7 @@ function render2D() {
   const showHum = document.getElementById('wg-show-hum')?.checked !== false
   const showRain = document.getElementById('wg-show-rain')?.checked !== false
   const showErosion = document.getElementById('wg-show-erosion')?.checked !== false
+  const showBiome = document.getElementById('wg-show-biome')?.checked !== false
   const hGlobal = worldData.horaGlobal ?? 6
   const estGlobal = reglas.macro.estacion ?? 0
 
@@ -701,10 +781,42 @@ function render2D() {
     const zRange = macroData.maxH - macroData.minH || 1
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const t = (zData.heights[y][x] - macroData.minH) / zRange
-        const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
-        ctx.fillStyle = `rgb(${gray},${gray},${gray})`
+        if (showDepth) {
+          const t = (zData.h[y][x] - macroData.minH) / zRange
+          const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
+          ctx.fillStyle = `rgb(${gray},${gray},${gray})`
+        } else {
+          ctx.fillStyle = '#1a1a1a'
+        }
         ctx.fillRect(x * cw, y * ch, cw, ch)
+
+        if (showHeat) {
+          ctx.fillStyle = tempColor(zData.temp[y][x], 0.3)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showHum) {
+          ctx.fillStyle = humColor(zData.hum[y][x], 0.25)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showWind) {
+          const ws = Math.min(1, Math.sqrt(zData.wu[y][x] ** 2 + zData.wv[y][x] ** 2))
+          ctx.fillStyle = windColor(ws, 0.2)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showRain) {
+          ctx.fillStyle = rioColor(zData.rios[y][x], 0.3)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showErosion) {
+          ctx.fillStyle = eroColor(zData.rios[y][x] > 0.3 ? -zData.rios[y][x] : 0, 0.25)
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+        }
+        if (showBiome) {
+          ctx.fillStyle = biomeColor(zData.temp[y][x], zData.hum[y][x])
+          ctx.globalAlpha = 0.4
+          ctx.fillRect(x * cw, y * ch, cw, ch)
+          ctx.globalAlpha = 1
+        }
         if (selZona && selZona[0] === x && selZona[1] === y) {
           ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3; ctx.strokeRect(x * cw, y * ch, cw, ch)
         }
@@ -762,8 +874,8 @@ function drawMiniMap(ctx, w, h) {
       const zData = generateZona(worldData, mx, my, reglas.zona, macroData)
       for (let zy = 0; zy < zr; zy++) {
         for (let zx = 0; zx < zc; zx++) {
-          const t = zData.temps[zy]?.[zx] ?? 0.5
-          const hum = zData.hums[zy]?.[zx] ?? 0.5
+          const t = zData.temp[zy]?.[zx] ?? 0.5
+          const hum = zData.hum[zy]?.[zx] ?? 0.5
           ctx.fillStyle = biomeColor(t, hum)
           ctx.fillRect((mx * zc + zx) * cw, (my * zr + zy) * ch, Math.ceil(cw), Math.ceil(ch))
         }
@@ -1003,21 +1115,33 @@ function renderReglas() {
     <div style="font-size:11px;color:#666;margin-top:4px">La lluvia desgasta pendientes y deposita sedimento en zonas bajas.</div>
   ` : activeLayer === 'zona' ? `
     <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">DETALLE SOBRE BASE MACRO</div>
+    <div class="wg-label">Rango detalle</div>
+    <input id="wg-znRDet" type="number" step="0.01" min="0" max="0.5" value="${r.rangoDetalle ?? 0.15}" style="width:100%;margin-bottom:6px">
     <div class="wg-label">Escala detalle</div>
     <input id="wg-znEsc" type="number" step="1" value="${r.detalleEscala || 20}" style="width:100%;margin-bottom:6px">
     <div class="wg-label">Octavas detalle</div>
     <input id="wg-znOct" type="number" step="1" min="1" max="10" value="${r.detalleOctaves || 3}" style="width:100%;margin-bottom:6px">
     <div class="wg-label">Amplitud detalle</div>
     <input id="wg-znAmp" type="number" step="0.05" value="${r.detalleAmp || 0.3}" style="width:100%;margin-bottom:6px">
+    <div style="font-size:11px;color:#666;margin-top:4px">El ruido se acota según la altura base (rangoDetalle × factor).</div>
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">VARIACIÓN CLIMA LOCAL</div>
     <div class="wg-label">Variación temp.</div>
     <input id="wg-znVarTemp" type="number" step="0.05" min="0" max="1" value="${r.varTemp ?? 0.2}" style="width:100%;margin-bottom:6px">
-    <div style="font-size:11px;color:#666;margin-top:4px">La altura, temperatura y humedad heredan del macro tile.</div>
+    <div class="wg-label">Variación humedad</div>
+    <input id="wg-znVarHum" type="number" step="0.05" min="0" max="1" value="${r.varHum ?? 0.15}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Factor flora</div>
+    <input id="wg-znFloraF" type="number" step="0.05" min="0" max="2" value="${r.floraFactor ?? 1}" style="width:100%;margin-bottom:6px">
+    <div style="font-size:11px;color:#666;margin-top:4px">Flora = temp × hum × factor. Sobre macro hereda altura, clima y humedad.</div>
 
     <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
 
     <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">EROSIÓN</div>
     <div class="wg-label">Eólica (0–1)</div><input id="wg-znEoEolica" type="number" step="0.05" min="0" max="1" value="${r.eoEolica ?? 0.3}" style="width:100%;margin-bottom:6px">
     <div class="wg-label">Hídrica (0–1)</div><input id="wg-znEoHidrica" type="number" step="0.05" min="0" max="1" value="${r.eoHidrica ?? 0.3}" style="width:100%;margin-bottom:6px">
+    <div style="font-size:11px;color:#666;margin-top:4px">La erosión hídrica define cauces de ríos. Eólica desgasta laderas expuestas.</div>
   ` : `
     <div class="wg-label">Tipo ruido</div>
     <select id="wg-noise" style="width:100%;margin-bottom:8px"><option value="perlin">Perlin</option></select>
@@ -1062,10 +1186,13 @@ function renderReglas() {
     if (g('wg-estacion')) r2.estacion = parseInt(g('wg-estacion').value) || 0
     if (g('wg-eroFactor')) r2.erosionFactor = parseFloat(g('wg-eroFactor').value) || 0
     if (g('wg-eroAnios')) r2.añosErosion = parseInt(g('wg-eroAnios').value) || 0
+    if (g('wg-znRDet')) r2.rangoDetalle = parseFloat(g('wg-znRDet').value) || 0
     if (g('wg-znEsc')) r2.detalleEscala = parseFloat(g('wg-znEsc').value) || 1
     if (g('wg-znOct')) r2.detalleOctaves = parseInt(g('wg-znOct').value) || 1
     if (g('wg-znAmp')) r2.detalleAmp = parseFloat(g('wg-znAmp').value) || 0.05
     if (g('wg-znVarTemp')) r2.varTemp = parseFloat(g('wg-znVarTemp').value) || 0
+    if (g('wg-znVarHum')) r2.varHum = parseFloat(g('wg-znVarHum').value) || 0
+    if (g('wg-znFloraF')) r2.floraFactor = parseFloat(g('wg-znFloraF').value) || 0
     if (g('wg-znEoEolica')) r2.eoEolica = parseFloat(g('wg-znEoEolica').value) || 0
     if (g('wg-znEoHidrica')) r2.eoHidrica = parseFloat(g('wg-znEoHidrica').value) || 0
   }
@@ -1262,7 +1389,7 @@ function renderFullMap() {
       const zData = generateZona(worldData, mx, my, reglas.zona, macroData)
       for (let zy = 0; zy < zr; zy++) {
         for (let zx = 0; zx < zc; zx++) {
-          const t = (zData.heights[zy][zx] - macroData.minH) / zRange
+          const t = (zData.h[zy][zx] - macroData.minH) / zRange
           const gray = Math.round(Math.max(0, Math.min(1, t)) * 255)
           ctx.fillStyle = `rgb(${gray},${gray},${gray})`
           ctx.fillRect((mx * zc + zx) * px, (my * zr + zy) * px, px, px)
@@ -1380,6 +1507,9 @@ export function renderWorldGenerator() {
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#f84">
             <input type="checkbox" id="wg-show-erosion"> <span>🧱 Erosión</span>
           </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#4c4">
+            <input type="checkbox" id="wg-show-biome"> <span>🌿 Bioma</span>
+          </label>
         </div>
       </div>
       <div class="tool-props" id="wg-reglas" style="overflow-y:auto;font-size:12px">
@@ -1416,7 +1546,7 @@ export function renderWorldGenerator() {
     }
   })
 
-  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain', 'wg-show-erosion'].forEach(id => {
+  ;['wg-show-heat', 'wg-show-depth', 'wg-show-wind', 'wg-show-pressure', 'wg-show-tec', 'wg-show-hum', 'wg-show-rain', 'wg-show-erosion', 'wg-show-biome'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
       if (fullMapView) { drawFullMap(); return }
       render2D()
