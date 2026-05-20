@@ -32,7 +32,7 @@
 | Voxel Modeler | ✅ Completo | `src/client/pages/voxel-modeler.js` |
 | HUD Editor | ✅ Completo | `src/client/pages/hud-editor.js` |
 | Input Mapper | ✅ Completo | `src/client/pages/input-mapper.js` |
-| World Generator | 🔄 En rediseño | `src/client/pages/world-generator.js` |
+| World Generator | ✅ Completo (3 capas) | `src/client/pages/world-generator.js` |
 | Studio | ⬜ Pendiente | — |
 | Game | ⬜ Pendiente | `src/engine/game.js` |
 
@@ -137,17 +137,48 @@ La Capa 1 alimenta el skybox del engine:
 
 ---
 
-## Capa 2 — Regional (borrador conceptual)
+## Capa 2 — Regional (simplificada)
 
-*— Pendiente de diseñar —*
+### Concepto
 
-Toma datos de Capa 1 por tile continental + vecindario 3×3. Refina relieve, clima local, biomas. No puede modificar la continental.
+Capa estilizada y ligera: solo geografía y clima para alimentar simulación pesada en Capa 3.
+
+### Output
+
+```js
+{ h, temp, presion, hum, wu, wv, flora }
+```
+
+Sin matrices de ríos ni erosión — se mudaron a Capa 3.
+
+### Reglas
+
+```
+rangoDetalle, varTemp, varHum, floraFactor
+detalleEscala, detalleOctaves, detalleAmp
+```
+
+### Overlays
+
+| Overlay | Descripción |
+|---|---|
+| 🗻 Profundidad | Altura en grises |
+| 🌡 Calor | Temperatura |
+| 💧 Humedad | Humedad |
+| 🌬 Viento | Velocidad del viento |
+| 🌿 Bioma | temp × hum |
 
 ## Capa 3 — Local (especificación completa)
 
 ### Concepto
 
-La Capa 3 genera el terreno local detallado a partir de los datos de Capa 2 (zData). Subdivide cada tile de zona en una cuadrícula `mapa×mapa` (default 8×8) y produce un campo de alturas continuo con micro-detalle Perlin, coloreado por bioma para visualización 3D. No puede modificar la regional.
+La Capa 3 genera el terreno local detallado a partir de los datos de Capa 2 (zData). Subdivide cada tile de zona en una cuadrícula `mapa×mapa` (default 8×8) y produce:
+1. Terreno 3D coloreado por bioma (bloques `InstancedMesh`)
+2. Ríos desde lluvia local (1-pass)
+3. Erosión dinámica con factor estacional
+4. Facciones procedimentales (2–4 asentamientos)
+
+No puede modificar la regional.
 
 ### Herencia
 
@@ -159,9 +190,30 @@ Cada celda local (x, y) se calcula desde zData mediante `sampleGrid2D`:
 | `temps[y][x]` | `sampleGrid2D(zData.temp, nx, ny)` |
 | `hums[y][x]` | `sampleGrid2D(zData.hum, nx, ny)` |
 | `floras[y][x]` | `sampleGrid2D(zData.flora, nx, ny)` |
-| `rios[y][x]` | `sampleGrid2D(zData.rios, nx, ny)` |
+| `rios[y][x]` | 1-pass accumulación desde `hum × (1 - temp) × 3`, escalado 0..1 |
 
 Coordenadas normalizadas: `nx = (zonaX * cols + x + 0.5) / (zCols * cols)`
+
+### Erosión dinámica
+
+Se aplica en cada generación de Capa 3:
+
+```
+estFactor = verano ? 1.5 : invierno ? 1.2 : 1
+erosion[y][x] = rios[y][x] * pendiente * 0.005 * estFactor
+heights[y][x] -= erosion[y][x] * 0.1
+```
+
+El desgaste se recalcula desde valores base, no se acumula (efímero).
+
+### Facciones
+
+`generarFacciones(heights, floras, rios, temps, seed, cols, rows)`:
+
+1. 2–4 facciones posicionadas en celdas con mayor `flora × rio + temp`
+2. Cada facción tiene: `{ id, nombre, color, capital, celdas[], estructuras[] }`
+3. Expansión radial: radio 1–3 alrededor de la capital
+4. Capital marcada con inicial del nombre
 
 ### Bloques 3D
 
@@ -184,13 +236,14 @@ Límite: 30k instancias máximo. `mapa = 8` → 8×8 = 64 celdas con ~50 bloques
 | `showHeat` | `lData.temps` | `tempColor()` alpha 0.3 |
 | `showHum` | `lData.hums` | `humColor()` alpha 0.25 |
 | `showRain` | `lData.rios` | `rioColor()` alpha 0.3 |
+| `showErosion` | `lData.erosion` | `eroColor()` alpha 0.3 |
 | `showBiome` | `lData.temps + hums` | `biomeColor()` alpha 0.4 |
+| `showFactions` | `lData.facciones` | Color + inicial por facción |
 
 ### Parámetros
 
 Los parámetros de la Capa 3 son los tiles `mapa` y `mapaBlk` del mundo:
 - `world.tiles.mapa[0]` (default 8): resolución del lienzo local
-- `world.tiles.mapaBlk` (default 8): subdivisión de bloques (no usado directamente por generateLocal, que usa mapa como resolución directa)
 
 ---
 

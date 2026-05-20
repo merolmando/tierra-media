@@ -169,5 +169,17 @@
       "Default mapa tiles subido de 2→8 para resolución local",
       "Máximo 30k instancias 3D (mapa=8 → ~3200 bloques típico)"
     ]
+  },
+  {
+    "date": "2026-05-21",
+    "title": "Capa 2 simplificada + Capa 3 con ríos/erosión/facciones",
+    "entries": [
+      "Capa 2: eliminados ríos (3 pases), eoEolica/eoHidrica de reglas, overlays ☔ 🧱",
+      "Capa 2 output simplificado: { h, temp, presion, hum, wu, wv, flora }",
+      "Capa 3 generateLocal: ríos desde lluvia local (1-pass), erosión dinámica por estación",
+      "Capa 3 generarFacciones: 2–4 facciones desde seed, capital en celda rica, expansión radial",
+      "Overlay 👑 Facción: color por facción + inicial del nombre en capital",
+      "Erosión dinámica: factor estacional (verano 1.5×, invierno 1.2×)"
+    ]
   }
 ]
