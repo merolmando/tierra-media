@@ -27,9 +27,13 @@ let renderer3d = null
 let controls3d = null
 let animFrame = null
 let container3d = null
+let simPlaying = false
+let simVelocidad = 1
+let ultimoTick = 0
+let animSimId = null
 
 const DEFAULT_REGLAS = {
-  macro: { distorsionFrecuencia: 0.3, distorsionMagnitud: 20, cotaMar: 0.45, transicionCosta: 0.1, detalleRuido: 30, detalleOctaves: 4, placas: 4, tectFuerza: 0.5, tectElevacion: 0.3, tectSubsidencia: 0.2, vientoEscala: 1, alturaInflTemp: 0.3, humEscala: 0.5, lluviaFactor: 1, distMaxCostas: 5 },
+  macro: { distorsionFrecuencia: 0.3, distorsionMagnitud: 20, cotaMar: 0.45, transicionCosta: 0.1, detalleRuido: 30, detalleOctaves: 4, placas: 4, tectFuerza: 0.5, tectElevacion: 0.3, tectSubsidencia: 0.2, vientoEscala: 1, alturaInflTemp: 0.3, humEscala: 0.5, lluviaFactor: 1, distMaxCostas: 5, velocidadDia: 25, estacion: 0 },
   zona: { detalleEscala: 20, detalleOctaves: 3, detalleAmp: 0.3, varTemp: 0.2, eoEolica: 0.3, eoHidrica: 0.3 },
   mapa: { noise: 'perlin', scale: 15, octaves: 3, amplitude: 10, persistence: 0.5, mar: 0 },
 }
@@ -86,7 +90,7 @@ function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Math.random()
 function escapeHtml(s) { if (!s) return ''; return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 
 // --- World generation ---
-function generateMacro(world, reglas) {
+function generateMacro(world, reglas, hora, estacion) {
   const noise = new Perlin(world.seed)
   const [cols, rows] = world.tiles.macro
 
@@ -190,16 +194,24 @@ function generateMacro(world, reglas) {
   const minH = 0, maxH = 1
   const midY = (rows - 1) / 2
 
-  // --- 2. Temperatura Latitud TL ---
+  // --- 2. Temperatura Latitud TL (modulada por estación) ---
+  const est = estacion ?? 0
   const TL = []
   for (let y = 0; y < rows; y++) {
     TL[y] = []
     for (let x = 0; x < cols; x++) {
-      TL[y][x] = 1 - Math.abs(y - midY) / midY
+      const latNorm = Math.abs(y - midY) / midY
+      const estFactor = est === 1 ? 0.12 : est === 3 ? -0.12 : est === 0 ? 0.04 : -0.04
+      TL[y][x] = Math.max(0, Math.min(1, 1 - latNorm + estFactor * latNorm))
     }
   }
 
-  // --- 3. Temperatura Real TR ---
+  // --- 3. Temperatura Real TR (modulada por hora del día) ---
+  const hr = hora ?? 6
+  const horaLocal = []
+  for (let x = 0; x < cols; x++) {
+    horaLocal[x] = (hr + x * 24 / cols) % 24
+  }
   const TR = []
   for (let y = 0; y < rows; y++) {
     TR[y] = []
@@ -208,6 +220,10 @@ function generateMacro(world, reglas) {
       const isOcean = H[y][x] < 0.5
       const depthFactor = isOcean ? Math.min(1, Math.abs(H[y][x] - 0.5) / 0.25) * 0.3 : 0
       let temp = TL[y][x] - hNorm * (reglas.alturaInflTemp ?? 0.3) - depthFactor
+      const solarAngle = (horaLocal[x] / 24) * Math.PI * 2
+      const dayFactor = (Math.cos(solarAngle - Math.PI) + 1) / 2
+      const nightCool = (1 - dayFactor) * 0.12 * (isOcean ? 0.3 : 1)
+      temp -= nightCool
       TR[y][x] = Math.max(0, Math.min(1, temp))
     }
   }
@@ -289,7 +305,10 @@ function generateMacro(world, reglas) {
     }
   }
 
-  return { H, TL, TR, P, WU, WV, WS, Hum, R, minH, maxH, faultSegments }
+  // Solar angle for skybox (global, based on first column)
+  const anguloSol = ((hr) / 24) * Math.PI * 2
+
+  return { H, TL, TR, P, WU, WV, WS, Hum, R, horaLocal, anguloSol, minH, maxH, faultSegments }
 }
 
 function sampleGrid(grid, cols, rows, wx, wy) {
@@ -547,9 +566,11 @@ function render2D() {
   const showTec = document.getElementById('wg-show-tec')?.checked !== false
   const showHum = document.getElementById('wg-show-hum')?.checked !== false
   const showRain = document.getElementById('wg-show-rain')?.checked !== false
+  const hGlobal = worldData.horaGlobal ?? 6
+  const estGlobal = reglas.macro.estacion ?? 0
 
   if (activeLayer === 'macro') {
-    const data = generateMacro(worldData, reglas.macro)
+    const data = generateMacro(worldData, reglas.macro, hGlobal, estGlobal)
     const [cols, rows] = worldData.tiles.macro
     const cw = w / cols, ch = h / rows
     for (let y = 0; y < rows; y++) {
@@ -605,7 +626,7 @@ function render2D() {
       }
     }
   } else if (activeLayer === 'zona' && selMacro) {
-    const macroData = generateMacro(worldData, reglas.macro)
+    const macroData = generateMacro(worldData, reglas.macro, hGlobal, estGlobal)
     const zData = generateZona(worldData, selMacro[0], selMacro[1], reglas.zona, macroData)
     const [cols, rows] = worldData.tiles.zona
     const cw = w / cols, ch = h / rows
@@ -667,7 +688,7 @@ function drawMiniMap(ctx, w, h) {
   const [zc, zr] = worldData.tiles.zona
   const cw = w / (mc * zc), ch = h / (mr * zr)
   if (cw < 2 || ch < 2) return
-  const macroData = generateMacro(worldData, reglas.macro)
+  const macroData = generateMacro(worldData, reglas.macro, worldData.horaGlobal ?? 6, reglas.macro.estacion ?? 0)
   for (let my = 0; my < mr; my++) {
     for (let mx = 0; mx < mc; mx++) {
       const zData = generateZona(worldData, mx, my, reglas.zona, macroData)
@@ -889,6 +910,20 @@ function renderReglas() {
     <div class="wg-label">Dist. máxima costas</div>
     <input id="wg-distCostas" type="number" step="0.5" min="0.5" max="20" value="${r.distMaxCostas ?? 5}" style="width:100%;margin-bottom:6px">
     <div style="font-size:11px;color:#666;margin-top:4px">La humedad viaja desde océanos por el viento. Precipita al chocar con pendientes.</div>
+
+    <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+    <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">TIEMPO / ESTACIÓN</div>
+    <div class="wg-label">Velocidad del día (min reales)</div>
+    <input id="wg-velDia" type="number" step="1" min="1" max="120" value="${r.velocidadDia ?? 25}" style="width:100%;margin-bottom:6px">
+    <div class="wg-label">Estación</div>
+    <select id="wg-estacion" style="width:100%;margin-bottom:6px">
+      <option value="0"${(r.estacion ?? 0) === 0 ? ' selected' : ''}>Primavera</option>
+      <option value="1"${(r.estacion ?? 0) === 1 ? ' selected' : ''}>Verano</option>
+      <option value="2"${(r.estacion ?? 0) === 2 ? ' selected' : ''}>Otoño</option>
+      <option value="3"${(r.estacion ?? 0) === 3 ? ' selected' : ''}>Invierno</option>
+    </select>
+    <div style="font-size:11px;color:#666;margin-top:4px">Estación modifica temperatura global y duración del día.</div>
   ` : activeLayer === 'zona' ? `
     <div style="font-size:12px;font-weight:600;color:#44aa88;margin-bottom:6px">DETALLE SOBRE BASE MACRO</div>
     <div class="wg-label">Escala detalle</div>
@@ -946,6 +981,8 @@ function renderReglas() {
     if (g('wg-humEsc')) r2.humEscala = parseFloat(g('wg-humEsc').value) || 0
     if (g('wg-lluviaF')) r2.lluviaFactor = parseFloat(g('wg-lluviaF').value) || 0
     if (g('wg-distCostas')) r2.distMaxCostas = parseFloat(g('wg-distCostas').value) || 0.5
+    if (g('wg-velDia')) r2.velocidadDia = parseFloat(g('wg-velDia').value) || 25
+    if (g('wg-estacion')) r2.estacion = parseInt(g('wg-estacion').value) || 0
     if (g('wg-znEsc')) r2.detalleEscala = parseFloat(g('wg-znEsc').value) || 1
     if (g('wg-znOct')) r2.detalleOctaves = parseInt(g('wg-znOct').value) || 1
     if (g('wg-znAmp')) r2.detalleAmp = parseFloat(g('wg-znAmp').value) || 0.05
@@ -978,6 +1015,7 @@ function newWorld() {
     deltas: {},
     estructuras: [],
   }
+  worldData.horaGlobal = 6
   layerStack = ['macro']; selMacro = null; selZona = null; selMapa = null
   document.getElementById('wg-name').value = ''
   document.getElementById('wg-seed').value = worldData.seed
@@ -1049,7 +1087,7 @@ async function startTour() {
   const btn = document.getElementById('wg-tour')
   if (btn) btn.textContent = '■ Detener'
   const reglas = worldData.reglas
-  const macroData = generateMacro(worldData, reglas.macro)
+  const macroData = generateMacro(worldData, reglas.macro, worldData.horaGlobal ?? 6, reglas.macro.estacion ?? 0)
   const [mc, mr] = worldData.tiles.macro
   const [zc, zr] = worldData.tiles.zona
 
@@ -1083,10 +1121,54 @@ async function startTour() {
   if (btn) btn.textContent = '▶ Recorrer'
 }
 
+// --- Simulación del reloj planetario ---
+function tickSim() {
+  if (!simPlaying || !worldData) { animSimId = null; return }
+  const ahora = performance.now()
+  const deltaMs = ahora - ultimoTick
+  ultimoTick = ahora
+  const reglas = worldData.reglas.macro
+  const msPorHora = (reglas.velocidadDia * 60 * 1000) / 24
+  const horas = deltaMs / msPorHora * simVelocidad
+  worldData.horaGlobal = ((worldData.horaGlobal ?? 6) + horas) % 24
+  const display = document.getElementById('wg-time-display')
+  if (display) {
+    const h = Math.floor(worldData.horaGlobal)
+    const m = Math.floor((worldData.horaGlobal - h) * 60)
+    const icon = worldData.horaGlobal >= 6 && worldData.horaGlobal < 18 ? '☀' : '☽'
+    display.textContent = `${icon} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+  render2D()
+  animSimId = requestAnimationFrame(tickSim)
+}
+
+function toggleSim() {
+  if (simPlaying) {
+    simPlaying = false
+    if (animSimId) { cancelAnimationFrame(animSimId); animSimId = null }
+    const btn = document.getElementById('wg-sim-play')
+    if (btn) btn.textContent = '▶'
+  } else {
+    simPlaying = true
+    ultimoTick = performance.now()
+    const btn = document.getElementById('wg-sim-play')
+    if (btn) btn.textContent = '⏸'
+    animSimId = requestAnimationFrame(tickSim)
+  }
+}
+
+function setSimSpeed(v) {
+  simVelocidad = v
+  document.querySelectorAll('.wg-speed-btn').forEach(b => {
+    b.style.background = parseFloat(b.dataset.speed) === v ? '#2a4a3a' : 'transparent'
+    b.style.color = parseFloat(b.dataset.speed) === v ? '#4c8' : '#888'
+  })
+}
+
 function renderFullMap() {
   if (!worldData) return
   const reglas = worldData.reglas
-  const macroData = generateMacro(worldData, reglas.macro)
+  const macroData = generateMacro(worldData, reglas.macro, worldData.horaGlobal ?? 6, reglas.macro.estacion ?? 0)
   const zRange = macroData.maxH - macroData.minH || 1
   const [mc, mr] = worldData.tiles.macro
   const [zc, zr] = worldData.tiles.zona
@@ -1186,7 +1268,15 @@ export function renderWorldGenerator() {
         <div style="position:absolute;top:8px;right:8px;z-index:10">
           <button id="wg-toggle3d" style="padding:4px 10px;border-radius:4px;border:1px solid #444;background:rgba(0,0,0,0.7);color:#ddd;cursor:pointer;font-size:11px">3D</button>
         </div>
-        <div id="wg-viz-bar" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.75);padding:5px 10px;z-index:10;display:flex;gap:10px;font-size:11px;align-items:center;flex-wrap:wrap">
+        <div id="wg-viz-bar" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.75);padding:4px 8px;z-index:10;display:flex;gap:6px;font-size:11px;align-items:center;flex-wrap:wrap">
+          <span id="wg-time-display" style="font-size:13px;font-weight:600;color:#ffcc44;min-width:70px">☀ 06:00</span>
+          <button id="wg-sim-play" style="background:none;border:1px solid #555;border-radius:4px;color:#ddd;cursor:pointer;font-size:12px;padding:2px 8px">▶</button>
+          <span style="color:#666">×</span>
+          <button class="wg-speed-btn" data-speed="1" style="background:#2a4a3a;border:none;border-radius:3px;color:#4c8;cursor:pointer;font-size:11px;padding:2px 6px">1</button>
+          <button class="wg-speed-btn" data-speed="10" style="background:transparent;border:none;border-radius:3px;color:#888;cursor:pointer;font-size:11px;padding:2px 6px">10</button>
+          <button class="wg-speed-btn" data-speed="100" style="background:transparent;border:none;border-radius:3px;color:#888;cursor:pointer;font-size:11px;padding:2px 6px">100</button>
+          <button class="wg-speed-btn" data-speed="1000" style="background:transparent;border:none;border-radius:3px;color:#888;cursor:pointer;font-size:11px;padding:2px 6px">1000</button>
+          <span style="color:#333">|</span>
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#ddd">
             <input type="checkbox" id="wg-show-depth" checked> <span>🗻 Profundidad</span>
           </label>
@@ -1251,6 +1341,11 @@ export function renderWorldGenerator() {
     })
   })
 
+  document.getElementById('wg-sim-play').addEventListener('click', toggleSim)
+  document.querySelectorAll('.wg-speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => setSimSpeed(parseFloat(btn.dataset.speed)))
+  })
+
   previewCanvas.addEventListener('wheel', e => {
     if (!fullMapView || !fullCanvas) return
     e.preventDefault()
@@ -1297,6 +1392,8 @@ export function renderWorldGenerator() {
 }
 
 export function cleanupWorldGenerator() {
+  simPlaying = false
+  if (animSimId) { cancelAnimationFrame(animSimId); animSimId = null }
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null }
   if (renderer3d) { renderer3d.dispose(); renderer3d = null }
   if (controls3d) { controls3d.dispose(); controls3d = null }

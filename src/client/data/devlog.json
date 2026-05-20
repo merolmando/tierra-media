@@ -115,5 +115,20 @@
       "Altura H normalizada a 0.0–1.0 (antes rango raw), océano = H < 0.5",
       "factorTierra en zona ajustado para H normalizada"
     ]
+  },
+  {
+    "date": "2026-05-21",
+    "title": "Capa 1 — Ciclo solar + estaciones + simulación",
+    "entries": [
+      "Reloj planetario: horaGlobal (0–24) avanza en simulación, husos horarios por coordenada X",
+      "Temperatura modulada por hora del día: noche enfría (factor solar: 0 medianoche, 1 mediodía), océanos tienen inercia térmica (×0.3)",
+      "4 estaciones (select: primavera/verano/otoño/invierno) modifican temperatura global por latitud (±0.12 en polos, 0 en ecuador)",
+      "Parámetros nuevos: velocidadDia (min reales/día), estacion (select 0–3)",
+      "Modo simulación:▶/⏸ play/pause, velocidades ×1, ×10, ×100, ×1000",
+      "Display de tiempo ☀/☽ HH:MM en la barra de visualización",
+      "generateMacro acepta hora y estacion opcionales, retorna anguloSol para skybox",
+      "horaGlobal se guarda con el mundo (save/load), default 6 (amanecer)",
+      "Cleanup detiene simulación al salir del World Generator"
+    ]
   }
 ]
