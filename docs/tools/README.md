@@ -12,20 +12,34 @@ Todas las herramientas comparten una arquitectura común:
 
 ```
    Material Creator ──→   Texture Painter ──→   Voxel Modeler ──┐
-                         4. HUD Editor ─────────────────────────┤
-                         5. Input Mapper ───────────────────────┤
+   (con tags)                                                     │
+      │                                                          │
+      ▼                                                          │
+   Structure Designer ───────────────────────────────────────────┤
+      │                                                          │
+      ▼                                                          │
+   Biome / Culture Editor ───────────────────────────────────────┤
+      │                                                          │
+      ▼                                                          │
+   World Generator ──────────────────────────────────────────────┤
+                                                                 │
+                           HUD Editor ───────────────────────────┤
+                           Input Mapper ─────────────────────────┤
                                                                 ↓
-                                                      6. Studio ──→ 7. Game
+                                                           Studio
 ```
 
 | Herramienta | Produce | Consume de |
 |---|---|---|
-| **Material Creator** | Material (color, roughness, metalness, mapas) | — |
+| **Material Creator** | Material (color, roughness, metalness, mapas, tags) | — |
 | **Texture Painter** | Textura (imagen PNG + normal map) | Material (como pinceles) |
 | **Voxel Modeler** | Modelo (malla primitivas + materiales) | Material (por primitiva) |
+| **Structure Designer** | Plantilla de estructura (geometría procedural + tags) | Material (tags: muro, techo, ventana, piso, camino) |
+| **Biome / Culture Editor** | Bioma / Cultura (paletas de materiales y variantes geométricas) | Material, Structure Designer |
+| **World Generator** | Mundo procedural (biomas + estructuras + terreno) | Biome Editor, Structure Designer |
 | **HUD Editor** | HUD (layout de UI con bars/text/image/button) | Textures, Input Maps |
 | **Input Mapper** | Input Map (bindings tecla→acción) | — |
-| **Studio** | Mapa (modelos posicionados en el mundo) | Modelo + Material + HUD |
+| **Studio** | Mapa (modelos posicionados en escenas) | Modelo + Material + HUD |
 
 ## API de recursos
 
@@ -40,7 +54,7 @@ PUT    /api/resources/:type/:id       → actualiza un recurso
 DELETE /api/resources/:type/:id       → elimina un recurso
 ```
 
-Tipos de recursos: `materials`, `textures`, `models`, `maps`, `huds`, `inputMaps`.
+Tipos de recursos: `materials`, `textures`, `models`, `maps`, `huds`, `inputMaps`, `structures`, `biomes`.
 
 ## Estructura de datos
 
@@ -153,6 +167,68 @@ Tipos de recursos: `materials`, `textures`, `models`, `maps`, `huds`, `inputMaps
 }
 ```
 
+### Plantilla de estructura
+```json
+{
+  "id": "uuid",
+  "name": "Casa pequeña",
+  "tags": ["edificio", "vivienda"],
+  "bounds": { "width": 6, "height": 5, "depth": 6 },
+  "parts": [
+    {
+      "id": "uuid",
+      "tag": "muro",
+      "geometry": {
+        "type": "box",
+        "position": [0, 1.5, -2.5],
+        "size": [6, 3, 1]
+      },
+      "collision": true,
+      "variants": []
+    },
+    {
+      "id": "uuid",
+      "tag": "ventana",
+      "geometry": {
+        "type": "box",
+        "position": [2, 1.5, -2.5],
+        "size": [1, 1, 0.5]
+      },
+      "collision": false,
+      "variants": ["cuadrada", "arco", "circular"]
+    }
+  ],
+  "rules": {
+    "minWidth": 4,
+    "maxWidth": 8,
+    "minHeight": 3,
+    "maxHeight": 6
+  }
+}
+```
+
+### Bioma / Cultura
+```json
+{
+  "id": "uuid",
+  "name": "Bosque Templado",
+  "type": "biome",
+  "tags": ["bosque", "templado"],
+  "palette": {
+    "muro": { "materialId": "uuid-madera-roble", "variant": "" },
+    "techo": { "materialId": "uuid-paja", "variant": "" },
+    "piso": { "materialId": "uuid-baldosa-piedra", "variant": "" },
+    "ventana": { "materialId": "uuid-madera-tallada", "variant": "cuadrada" },
+    "camino": { "materialId": "uuid-tierra", "variant": "" }
+  },
+  "decorationSet": ["uuid-arbol-roble", "uuid-arbusto"],
+  "climate": {
+    "temperature": [0.4, 0.7],
+    "humidity": [0.5, 0.9]
+  }
+}
+```
+
 ## Almacenamiento en servidor
 
 ```
@@ -162,27 +238,18 @@ data/
 ├── models/        → .json
 ├── huds/          → .json
 ├── inputMaps/     → .json
-└── maps/          → .json
+├── maps/          → .json
+├── structures/    → .json (plantillas de estructura)
+└── biomes/        → .json (biomas / culturas)
 ```
 
 ## ResourcePicker
 
 Todas las herramientas comparten un componente de navegación de recursos que permite:
 
-- Explorar recursos por tipo (materiales, texturas, modelos, mapas)
+- Explorar recursos por tipo (materiales, texturas, modelos, mapas, estructuras, biomas)
 - Buscar por nombre
 - Vista previa del recurso
 - Arrastrar recursos entre herramientas
 
-## Pipelines de producción
 
-### Pipeline principal
-```
-Material Creator → Texture Painter → Voxel Modeler → Studio → Juego
-```
-
-### Pipeline alternativo
-```
-Material Creator → Voxel Modeler → Studio → Juego
-```
-(sin texturas personalizadas, usando solo colores y propiedades PBR)

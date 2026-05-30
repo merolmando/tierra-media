@@ -12,7 +12,7 @@ const DOCS_DIR = join(__dirname, '../../docs')
 const DEVLOG_PATH = join(__dirname, '../client/data/devlog.json')
 const DIST_DIR = join(__dirname, '../../dist')
 const DATA_DIR = join(__dirname, '../../data')
-const DATA_TYPES = ['materials', 'textures', 'models', 'maps', 'huds', 'inputMaps', 'worlds', 'structures']
+const DATA_TYPES = ['materials', 'textures', 'models', 'maps', 'huds', 'inputMaps', 'structures', 'biomes']
 DATA_TYPES.forEach(t => mkdirSync(join(DATA_DIR, t), { recursive: true }))
 
 app.use(express.json({ limit: '50mb' }))

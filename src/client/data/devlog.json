@@ -181,5 +181,19 @@
       "Overlay 👑 Facción: color por facción + inicial del nombre en capital",
       "Erosión dinámica: factor estacional (verano 1.5×, invierno 1.2×)"
     ]
+  },
+  {
+    "date": "2026-05-31",
+    "title": "Roadmap reestructurado — Enfoque bottom-up",
+    "entries": [
+      "World Generator eliminado del working tree: se reemplazará con un enfoque bottom-up",
+      "Nueva prioridad: Structure Designer primero, construcciones procedurales con partes etiquetadas",
+      "Biome/Culture Editor después: define paletas de materiales y variantes geométricas por tag",
+      "Material Creator necesita extensión de tags (muro, techo, ventana, piso, camino) para soportar resolución por bioma",
+      "World Generator se reconstruirá sobre biomas, no al revés",
+      "Tarjetas Coming Soon agregadas en #/dev para Structure Designer, Biome/Culture Editor y World Generator",
+      "Roadmap documentado en AGENTS.md con dependencias y notas de diseño",
+      "docs/tools/README.md actualizado con pipeline completo y formatos de datos para estructuras y biomas"
+    ]
   }
 ]
